@@ -118,16 +118,35 @@ button:active {
 .settings-band input,
 .settings-band select {
   width: 74px;
+  height: 44px;
+  border: 1px solid #aab3a2;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #20251f;
+  font-weight: 700;
+  box-shadow: none;
 }
 
 .time-text {
+  color: #20251f;
   font-variant-numeric: tabular-nums;
   text-align: center;
+  -webkit-text-fill-color: #20251f;
 }
 
 .settings-band > button,
 .date-picker__button {
   padding: 0 14px;
+}
+
+.date-picker__button {
+  height: 44px;
+  border-color: #aab3a2;
+  background: #ffffff;
+  color: #20251f;
+  font-weight: 700;
+  box-shadow: none;
 }
 
 .date-field {
@@ -692,6 +711,11 @@ button:active {
 }
 
 @media (max-width: 520px) {
+  input:not([type="checkbox"]):not([type="file"]),
+  select {
+    font-size: 16px;
+  }
+
   .topbar {
     flex-direction: column;
     gap: 8px;
@@ -712,7 +736,11 @@ button:active {
 
   .settings-band label,
   .date-field {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
     flex: 1 1 calc(50% - 6px);
+    align-items: center;
+    gap: 6px;
   }
 
   .settings-band input,
@@ -732,6 +760,7 @@ button:active {
 
   .date-picker {
     flex: 1;
+    min-width: 0;
   }
 
   .date-picker__button {
