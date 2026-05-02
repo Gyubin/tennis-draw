@@ -22,6 +22,28 @@ export function formatMinutes(value: number): string {
   return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
 }
 
+export function formatLocalDate(value: Date): string {
+  return `${value.getFullYear()}-${(value.getMonth() + 1).toString().padStart(2, "0")}-${value
+    .getDate()
+    .toString()
+    .padStart(2, "0")}`;
+}
+
+export function parseLocalDate(value: string): Date {
+  const parts = value.split("-");
+  if (parts.length !== 3) throw new Error("날짜는 YYYY-MM-DD 형식이어야 합니다.");
+  const [year, month, day] = parts.map(Number);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+    throw new Error("날짜는 숫자 YYYY-MM-DD 형식이어야 합니다.");
+  }
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    throw new Error("유효하지 않은 날짜입니다.");
+  }
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
 export function buildCurrentWeekLabel(now = new Date()): string {
   const current = new Date(now);
   const day = current.getDay();
@@ -37,7 +59,5 @@ export function buildCurrentWeekLabel(now = new Date()): string {
     saturday.setDate(saturday.getDate() + 7);
   }
 
-  return `${saturday.getFullYear()}-${(saturday.getMonth() + 1)
-    .toString()
-    .padStart(2, "0")}-${saturday.getDate().toString().padStart(2, "0")}`;
+  return formatLocalDate(saturday);
 }

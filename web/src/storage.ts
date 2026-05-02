@@ -1,4 +1,4 @@
-import { buildCurrentWeekLabel, parseTimeToMinutes } from "./domain/time";
+import { buildCurrentWeekLabel, parseLocalDate, parseTimeToMinutes } from "./domain/time";
 import type { AppState, BackupV1, Player } from "./domain/types";
 
 const STORAGE_KEY = "tennis-draw:v1";
@@ -20,7 +20,9 @@ export function defaultState(): AppState {
       participantIds: roster.map((player) => player.playerId),
       requiredPairs: [],
       lastSchedule: null,
+      activeHistoryId: null,
     },
+    scheduleHistory: [],
   };
 }
 
@@ -35,6 +37,7 @@ export function loadState(storage: Storage = window.localStorage): AppState {
       ...parsed,
       settings: { ...defaultState().settings, ...parsed.settings },
       currentWeek: { ...defaultState().currentWeek, ...parsed.currentWeek },
+      scheduleHistory: parsed.scheduleHistory ?? [],
     });
   } catch {
     return defaultState();
@@ -63,10 +66,16 @@ export function restoreBackup(raw: string): AppState {
     ...parsed.state,
     settings: { ...defaultState().settings, ...parsed.state.settings },
     currentWeek: { ...defaultState().currentWeek, ...parsed.state.currentWeek },
+    scheduleHistory: parsed.state.scheduleHistory ?? [],
   });
 }
 
 function normalizeState(state: AppState): AppState {
+  const scheduleHistory = Array.isArray(state.scheduleHistory) ? state.scheduleHistory : [];
+  const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === state.currentWeek.activeHistoryId)
+    ? state.currentWeek.activeHistoryId
+    : null;
+  const weekLabel = normalizeDateLabel(state.currentWeek.weekLabel);
   return {
     ...state,
     settings: {
@@ -82,7 +91,22 @@ function normalizeState(state: AppState): AppState {
       showLateJoin: player.showLateJoin ?? false,
       showEarlyLeave: player.showEarlyLeave ?? false,
     })),
+    currentWeek: {
+      ...state.currentWeek,
+      weekLabel,
+      activeHistoryId,
+    },
+    scheduleHistory,
   };
+}
+
+function normalizeDateLabel(value: string): string {
+  try {
+    parseLocalDate(value);
+    return value;
+  } catch {
+    return buildCurrentWeekLabel();
+  }
 }
 
 function sampleRoster(): Player[] {

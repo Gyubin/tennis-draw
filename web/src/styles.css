@@ -106,7 +106,8 @@ button:active {
   border-radius: 8px;
 }
 
-.settings-band label {
+.settings-band label,
+.date-field {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -124,8 +125,81 @@ button:active {
   text-align: center;
 }
 
-.settings-band button {
+.settings-band > button,
+.date-picker__button {
   padding: 0 14px;
+}
+
+.date-field {
+  position: relative;
+}
+
+.date-picker {
+  position: relative;
+}
+
+.date-picker__button {
+  min-width: 150px;
+}
+
+.calendar {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  width: min(320px, calc(100vw - 48px));
+  padding: 10px;
+  border: 1px solid #b9c4b1;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(32 37 31 / 18%);
+}
+
+.calendar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.calendar__header strong {
+  font-size: 16px;
+}
+
+.calendar__header .icon-button {
+  flex: none;
+}
+
+.calendar__weekdays,
+.calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar__weekdays span {
+  color: #667060;
+  font-size: 12px;
+  text-align: center;
+}
+
+.calendar__blank,
+.calendar__day {
+  min-height: 34px;
+}
+
+.calendar__day {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border-color: #d8dfd2;
+  font-size: 16px;
+}
+
+.calendar__day--selected {
+  border-color: #4d6a40;
+  background: #dfead8;
+  font-weight: 800;
 }
 
 .data-panel {
@@ -156,7 +230,7 @@ button:active {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-bottom: 8px;
 }
@@ -385,6 +459,52 @@ button:active {
   font-size: 13px;
 }
 
+.history-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(130px, 220px) 64px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #dce4d6;
+  border-radius: 8px;
+  background: #fbfcfa;
+}
+
+.history-row--active {
+  border-color: #4d6a40;
+  background: #eef6eb;
+}
+
+.history-row__open {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.history-row__open span {
+  color: #667060;
+  font-size: 12px;
+}
+
+.history-row input {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #cbd3c5;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: #ffffff;
+}
+
 .schedule-panel {
   margin-top: 0;
 }
@@ -590,7 +710,8 @@ button:active {
     gap: 6px;
   }
 
-  .settings-band label {
+  .settings-band label,
+  .date-field {
     flex: 1 1 calc(50% - 6px);
   }
 
@@ -599,9 +720,22 @@ button:active {
     width: 100%;
   }
 
-  .settings-band button {
+  .settings-band > button,
+  .date-picker__button {
     flex: 1;
     padding: 0 8px;
+  }
+
+  .date-field {
+    flex: 1 1 100%;
+  }
+
+  .date-picker {
+    flex: 1;
+  }
+
+  .date-picker__button {
+    width: 100%;
   }
 
   .settings-band label {
@@ -620,6 +754,19 @@ button:active {
   .data-upload {
     flex: 1;
     font-size: 13px;
+  }
+
+  .tabs {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .history-row {
+    grid-template-columns: 1fr 58px;
+  }
+
+  .history-row__open,
+  .history-row input {
+    grid-column: 1 / -1;
   }
 
   .participant-row {

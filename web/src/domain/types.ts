@@ -62,6 +62,18 @@ export interface WeekState {
   participantIds: string[];
   requiredPairs: RequiredPair[];
   lastSchedule: ScheduleResult | null;
+  activeHistoryId: string | null;
+}
+
+export interface ScheduleHistoryEntry {
+  historyId: string;
+  name: string;
+  dateLabel: string;
+  createdAt: string;
+  settings: AppSettings;
+  participantIds: string[];
+  requiredPairs: RequiredPair[];
+  schedule: ScheduleResult;
 }
 
 export interface AppState {
@@ -69,6 +81,7 @@ export interface AppState {
   roster: Player[];
   settings: AppSettings;
   currentWeek: WeekState;
+  scheduleHistory: ScheduleHistoryEntry[];
 }
 
 export interface BackupV1 {
