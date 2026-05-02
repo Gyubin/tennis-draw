@@ -26,8 +26,8 @@ export interface ScheduledMatch {
   slotStart: number;
   slotEnd: number;
   court: number;
-  team1: [Player, Player];
-  team2: [Player, Player];
+  team1: [Player | null, Player | null];
+  team2: [Player | null, Player | null];
   matchType: MatchType;
 }
 

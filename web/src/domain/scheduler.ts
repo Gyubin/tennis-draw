@@ -14,6 +14,8 @@ export const MATCH_TYPE_LABELS: Record<MatchType, string> = {
   men_doubles_substitute: "남복(대체)",
 };
 
+export type ScheduleSlot = ScheduledMatch["team1"][number];
+
 interface MatchCandidate {
   teams: [[Player, Player], [Player, Player]];
   matchType: MatchType;
@@ -57,6 +59,32 @@ export function classifyMatch(players: Player[]): MatchType | null {
     if (substitute?.canFillMaleSlot) return "men_doubles_substitute";
   }
   return null;
+}
+
+export function filledPlayers(match: ScheduledMatch): Player[] {
+  return [...match.team1, ...match.team2].filter((player): player is Player => Boolean(player));
+}
+
+export function displayMatchType(match: ScheduledMatch): MatchType | null {
+  const [team1Player1, team1Player2] = match.team1;
+  const [team2Player1, team2Player2] = match.team2;
+  if (!team1Player1 || !team1Player2 || !team2Player1 || !team2Player2) return null;
+
+  const team1Genders = new Set([team1Player1.gender, team1Player2.gender]);
+  const team2Genders = new Set([team2Player1.gender, team2Player2.gender]);
+  if (team1Genders.size !== 1 && team2Genders.size !== 1) return "mixed_doubles";
+  if (team1Genders.size === 1 && team2Genders.size === 1) {
+    const team1Gender = team1Player1.gender;
+    const team2Gender = team2Player1.gender;
+    if (team1Gender === "M" && team2Gender === "M") return "men_doubles";
+    if (team1Gender === "F" && team2Gender === "F") return "women_doubles";
+  }
+  return null;
+}
+
+export function displayMatchTypeLabel(match: ScheduledMatch): string {
+  const matchType = displayMatchType(match);
+  return matchType ? MATCH_TYPE_LABELS[matchType] : "";
 }
 
 function generateTeamings(playersInput: Player[]): Array<[[[Player, Player], [Player, Player]], MatchType]> {
@@ -405,7 +433,7 @@ export function summarizeManualSchedule(matches: ScheduledMatch[], players: Play
   const stats = initializeStats(players);
   const requiredPairKeys = new Set(requiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
   for (const match of matches) {
-    updateStats([match.team1, match.team2], match.matchType, stats, requiredPairKeys);
+    updateManualStats(match, stats, requiredPairKeys);
   }
   return buildScheduleResult([...matches].sort((a, b) => a.slotStart - b.slotStart || a.court - b.court), players, requiredPairs, stats, playersById);
 }
@@ -450,6 +478,29 @@ function updateStats(teams: [[Player, Player], [Player, Player]], matchType: Mat
   }
   for (const player of teams[0]) {
     for (const opponent of teams[1]) {
+      increment(stats.opponentPairCounts, pairKey(player.playerId, opponent.playerId));
+    }
+  }
+}
+
+function updateManualStats(match: ScheduledMatch, stats: MutableStats, requiredPairKeys: Set<string>): void {
+  const players = filledPlayers(match);
+  const matchType = displayMatchType(match);
+  for (const player of players) {
+    increment(stats.matches, player.playerId);
+    if (matchType) increment(countsAsSameGender(matchType, players) ? stats.sameGender : stats.mixed, player.playerId);
+  }
+  if (matchType) increment(stats.matchTypeCounts, matchType);
+
+  const fullTeams = [match.team1, match.team2].filter((team): team is [Player, Player] => Boolean(team[0] && team[1]));
+  for (const team of fullTeams) {
+    const key = pairKey(team[0].playerId, team[1].playerId);
+    increment(stats.teamPairCounts, key);
+    if (requiredPairKeys.has(key)) stats.satisfiedRequiredPairs.add(key);
+  }
+  if (fullTeams.length !== 2) return;
+  for (const player of fullTeams[0]) {
+    for (const opponent of fullTeams[1]) {
       increment(stats.opponentPairCounts, pairKey(player.playerId, opponent.playerId));
     }
   }
@@ -576,7 +627,7 @@ function computePlayersWithTwoSlotWait(matches: ScheduledMatch[], players: Playe
   const playedBySlot = new Map(
     slots.map((slotStart) => [
       slotStart,
-      new Set(matches.filter((match) => match.slotStart === slotStart).flatMap((match) => [...match.team1, ...match.team2].map((player) => player.playerId))),
+      new Set(matches.filter((match) => match.slotStart === slotStart).flatMap((match) => filledPlayers(match).map((player) => player.playerId))),
     ]),
   );
   const result: string[] = [];

@@ -1,4 +1,4 @@
-import { MATCH_TYPE_LABELS } from "./domain/scheduler";
+import { displayMatchTypeLabel } from "./domain/scheduler";
 import { formatMinutes } from "./domain/time";
 import type { ScheduleResult, ScheduledMatch } from "./domain/types";
 
@@ -25,8 +25,8 @@ export function buildShareRows(result: ScheduleResult): ShareRow[] {
         .sort((a, b) => a.court - b.court)
         .map((match) => ({
           court: match.court,
-          text: `${match.team1[0].name}/${match.team1[1].name} vs ${match.team2[0].name}/${match.team2[1].name}`,
-          type: MATCH_TYPE_LABELS[match.matchType],
+          text: `${slotName(match.team1[0])}/${slotName(match.team1[1])} vs ${slotName(match.team2[0])}/${slotName(match.team2[1])}`,
+          type: displayMatchTypeLabel(match),
         })),
     }));
 }
@@ -48,9 +48,10 @@ export function buildShareSvg(result: ScheduleResult, title: string): string {
       const courtCells = Array.from({ length: maxCourts }, (_, courtIndex) => {
         const court = row.courts[courtIndex];
         const x = 20 + timeWidth + courtIndex * courtWidth;
+        const meta = court ? `${court.court}코트${court.type ? ` · ${court.type}` : ""}` : "";
         return `
           <rect x="${x}" y="${y}" width="${courtWidth}" height="${rowHeight}" fill="${courtIndex % 2 === 0 ? "#ffffff" : "#f7faf4"}" stroke="#293126" stroke-width="2"/>
-          <text x="${x + 14}" y="${y + 30}" font-size="24" font-weight="800" fill="#263020">${court ? `${court.court}코트 · ${escapeXml(court.type)}` : ""}</text>
+          <text x="${x + 14}" y="${y + 30}" font-size="24" font-weight="800" fill="#263020">${escapeXml(meta)}</text>
           <text x="${x + 14}" y="${y + 70}" font-size="27" font-weight="700" fill="#111811">${court ? escapeXml(compactNames(court.text)) : ""}</text>
         `;
       }).join("");
@@ -106,6 +107,10 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 function compactNames(value: string): string {
   return value.replaceAll(",", "/");
+}
+
+function slotName(player: ScheduledMatch["team1"][number]): string {
+  return player?.name ?? "빈칸";
 }
 
 function escapeXml(value: string): string {

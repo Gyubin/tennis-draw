@@ -1,4 +1,4 @@
-import { classifyMatch, isPlayerAvailable, summarizeManualSchedule } from "./scheduler";
+import { displayMatchType, filledPlayers, isPlayerAvailable, summarizeManualSchedule } from "./scheduler";
 import type { Player, RequiredPair, ScheduleResult, ScheduledMatch } from "./types";
 
 export interface ValidationResult {
@@ -12,16 +12,16 @@ export function validateSchedule(matches: ScheduledMatch[], players: Player[], r
   const warnings: string[] = [];
 
   for (const match of matches) {
-    const matchPlayers = [...match.team1, ...match.team2];
+    const matchPlayers = filledPlayers(match);
     const uniquePlayerIds = new Set(matchPlayers.map((player) => player.playerId));
-    if (uniquePlayerIds.size !== 4) {
+    if (uniquePlayerIds.size !== matchPlayers.length) {
       errors.push(`${match.court}코트 ${match.slotStart} 타임에 중복 선수가 있습니다.`);
     }
-    const expectedType = classifyMatch(matchPlayers);
-    if (!expectedType) {
-      errors.push(`${match.court}코트 경기 조합이 허용되지 않습니다.`);
-    } else if (expectedType !== match.matchType) {
+    const expectedType = matchPlayers.length === 4 ? displayMatchType(match) : null;
+    if (expectedType) {
       match.matchType = expectedType;
+    } else if (matchPlayers.length === 4) {
+      warnings.push("성비가 어긋납니다.");
     }
     for (const player of matchPlayers) {
       if (!isPlayerAvailable(player, match.slotStart, match.slotEnd - match.slotStart)) {
@@ -36,7 +36,7 @@ export function validateSchedule(matches: ScheduledMatch[], players: Player[], r
   }
   for (const [slotStart, slotMatches] of matchesBySlot.entries()) {
     const seen = new Set<string>();
-    for (const player of slotMatches.flatMap((match) => [...match.team1, ...match.team2])) {
+    for (const player of slotMatches.flatMap(filledPlayers)) {
       if (seen.has(player.playerId)) {
         errors.push(`${player.name}이 ${slotStart} 타임에 중복 출전합니다.`);
       }

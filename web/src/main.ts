@@ -1,6 +1,6 @@
 import "./styles.css";
 import { nextHistoryName } from "./domain/history";
-import { MATCH_TYPE_LABELS, scheduleMatches } from "./domain/scheduler";
+import { displayMatchTypeLabel, filledPlayers, scheduleMatches } from "./domain/scheduler";
 import { buildCurrentWeekLabel, formatLocalDate, formatMinutes, parseLocalDate, parseTimeToMinutes } from "./domain/time";
 import type { AppSettings, AppState, ClubState, Player, PlayerSummary, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
 import { validateSchedule } from "./domain/validation";
@@ -22,6 +22,9 @@ let selectedHistoryId: string | null = null;
 let sharingImage = false;
 let dragPayload: DragPayload | null = null;
 let ghost: HTMLElement | null = null;
+let dragMoved = false;
+let suppressNextScheduleClick = false;
+let emptySlotPicker: Extract<DragPayload, { kind: "schedule" }> | null = null;
 
 const appElement = document.querySelector<HTMLDivElement>("#app");
 if (!appElement) throw new Error("App root not found.");
@@ -473,9 +476,10 @@ function renderRequiredPairNames(pair: RequiredPair, players: Player[]): string 
 }
 
 function renderMatchCard(match: ScheduledMatch, matchIndex: number, readonly: boolean): string {
+  const label = displayMatchTypeLabel(match);
   return `
     <article class="match-card">
-      <div class="match-card__meta">${match.court}코트 · ${MATCH_TYPE_LABELS[match.matchType]}</div>
+      <div class="match-card__meta">${match.court}코트${label ? ` · ${label}` : ""}</div>
       <div class="teams">
         ${renderSchedulePlayer(match.team1[0], matchIndex, "team1", 0, readonly)}
         ${renderSchedulePlayer(match.team1[1], matchIndex, "team1", 1, readonly)}
@@ -483,14 +487,28 @@ function renderMatchCard(match: ScheduledMatch, matchIndex: number, readonly: bo
         ${renderSchedulePlayer(match.team2[0], matchIndex, "team2", 0, readonly)}
         ${renderSchedulePlayer(match.team2[1], matchIndex, "team2", 1, readonly)}
       </div>
+      ${renderEmptySlotPicker(match, matchIndex, readonly)}
     </article>
   `;
 }
 
-function renderSchedulePlayer(player: Player, matchIndex: number, side: "team1" | "team2", position: 0 | 1, readonly: boolean): string {
+function renderSchedulePlayer(player: Player | null, matchIndex: number, side: "team1" | "team2", position: 0 | 1, readonly: boolean): string {
+  if (!player) {
+    return `
+      <button class="player-chip player-chip--schedule player-chip--empty"
+        ${readonly ? "" : `data-draggable="schedule"`}
+        ${readonly ? "" : `data-action="open-empty-slot"`}
+        data-match-index="${matchIndex}"
+        data-side="${side}"
+        data-position="${position}"
+        type="button"
+        aria-label="빈칸">빈칸</button>
+    `;
+  }
   return `
     <button class="player-chip player-chip--schedule ${player.gender === "F" ? "player-chip--female" : ""}"
       ${readonly ? "" : `data-draggable="schedule"`}
+      ${readonly ? "" : `data-action="bench-schedule-player"`}
       data-match-index="${matchIndex}"
       data-side="${side}"
       data-position="${position}"
@@ -498,9 +516,39 @@ function renderSchedulePlayer(player: Player, matchIndex: number, side: "team1" 
   `;
 }
 
+function renderEmptySlotPicker(match: ScheduledMatch, matchIndex: number, readonly: boolean): string {
+  if (readonly || !emptySlotPicker || emptySlotPicker.matchIndex !== matchIndex) return "";
+  if (match[emptySlotPicker.side][emptySlotPicker.position]) return "";
+  const waiting = waitingPlayersForSlot(match);
+  return `
+    <div class="empty-slot-picker">
+      ${
+        waiting.length === 0
+          ? `<span>선택 가능한 대기 인원이 없습니다.</span>`
+          : waiting
+              .map(
+                (player) => `
+                  <button type="button"
+                    class="empty-slot-picker__player ${player.gender === "F" ? "empty-slot-picker__player--female" : "empty-slot-picker__player--male"}"
+                    data-action="fill-empty-slot"
+                    data-match-index="${matchIndex}"
+                    data-side="${emptySlotPicker?.side}"
+                    data-position="${emptySlotPicker?.position}"
+                    data-player-id="${player.playerId}">
+                    ${escapeHtml(player.name)}
+                  </button>
+                `,
+              )
+              .join("")
+      }
+      <button type="button" class="empty-slot-picker__close" data-action="close-empty-slot">닫기</button>
+    </div>
+  `;
+}
+
 function renderWaitingLine(slotStart: number, matches: ScheduledMatch[], players: Player[]): string {
   const slotMinutes = matches[0].slotEnd - matches[0].slotStart;
-  const playedIds = new Set(matches.flatMap((match) => [...match.team1, ...match.team2].map((player) => player.playerId)));
+  const playedIds = new Set(matches.flatMap((match) => filledPlayers(match).map((player) => player.playerId)));
   const waiting = players
     .filter((player) => !playedIds.has(player.playerId))
     .filter((player) => isWaitingVisible(player, slotStart, slotMinutes))
@@ -576,6 +624,10 @@ function handleClick(event: Event): void {
   if (action === "add-player") addPlayer();
   if (action === "delete-player") deletePlayer(actionTarget.dataset.playerId ?? "");
   if (action === "remove-participant") removeParticipant(actionTarget.dataset.playerId ?? "");
+  if (action === "open-empty-slot") openEmptySlotPicker(actionTarget);
+  if (action === "close-empty-slot") closeEmptySlotPicker();
+  if (action === "fill-empty-slot") fillEmptySlot(actionTarget);
+  if (action === "bench-schedule-player") benchSchedulePlayer(actionTarget);
   if (action === "generate") generateSchedule();
   if (action === "new-week") newWeek();
   if (action === "export") exportBackup();
@@ -683,6 +735,9 @@ function selectDate(dateLabel: string): void {
 
 function startDrag(event: PointerEvent): void {
   const element = event.currentTarget as HTMLElement;
+  const startX = event.clientX;
+  const startY = event.clientY;
+  dragMoved = false;
   element.setPointerCapture(event.pointerId);
   const rect = element.getBoundingClientRect();
   ghost = element.cloneNode(true) as HTMLElement;
@@ -706,12 +761,17 @@ function startDrag(event: PointerEvent): void {
     };
   }
 
-  const onMove = (moveEvent: PointerEvent) => moveGhost(moveEvent.clientX, moveEvent.clientY);
+  const onMove = (moveEvent: PointerEvent) => {
+    if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 5) dragMoved = true;
+    moveGhost(moveEvent.clientX, moveEvent.clientY);
+  };
   const onUp = (upEvent: PointerEvent) => {
+    const wasScheduleDrag = dragPayload?.kind === "schedule";
     element.releasePointerCapture(event.pointerId);
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
     finishDrag(upEvent.clientX, upEvent.clientY);
+    suppressNextScheduleClick = wasScheduleDrag && dragMoved;
   };
   document.addEventListener("pointermove", onMove);
   document.addEventListener("pointerup", onUp);
@@ -723,6 +783,7 @@ function finishDrag(clientX: number, clientY: number): void {
   const payload = dragPayload;
   dragPayload = null;
   if (!payload) return;
+  if (payload.kind === "schedule" && !dragMoved) return;
   const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-participant-zone], [data-draggable='schedule']");
   if (!target) return;
 
@@ -922,7 +983,76 @@ function swapSchedulePlayers(source: Extract<DragPayload, { kind: "schedule" }>,
   const validation = validateSchedule(schedule.matches, schedule.players, activeClub().currentWeek.requiredPairs);
   activeClub().currentWeek.lastSchedule = validation.summary;
   syncActiveHistory(validation.summary);
+  emptySlotPicker = null;
   commit();
+}
+
+function benchSchedulePlayer(target: HTMLElement): void {
+  if (suppressNextScheduleClick) {
+    suppressNextScheduleClick = false;
+    return;
+  }
+  const schedule = activeClub().currentWeek.lastSchedule;
+  if (!schedule) return;
+  const match = schedule.matches[Number(target.dataset.matchIndex)];
+  if (!match) return;
+  const side = target.dataset.side === "team1" ? "team1" : "team2";
+  const position = Number(target.dataset.position) === 0 ? 0 : 1;
+  if (!match[side][position]) return;
+  match[side][position] = null;
+  const validation = validateSchedule(schedule.matches, schedule.players, activeClub().currentWeek.requiredPairs);
+  activeClub().currentWeek.lastSchedule = validation.summary;
+  syncActiveHistory(validation.summary);
+  emptySlotPicker = { kind: "schedule", matchIndex: Number(target.dataset.matchIndex), side, position };
+  commit();
+}
+
+function openEmptySlotPicker(target: HTMLElement): void {
+  if (suppressNextScheduleClick) {
+    suppressNextScheduleClick = false;
+    return;
+  }
+  const schedule = activeClub().currentWeek.lastSchedule;
+  if (!schedule) return;
+  const matchIndex = Number(target.dataset.matchIndex);
+  const side = target.dataset.side === "team1" ? "team1" : "team2";
+  const position = Number(target.dataset.position) === 0 ? 0 : 1;
+  const match = schedule.matches[matchIndex];
+  if (!match || match[side][position]) return;
+  emptySlotPicker = { kind: "schedule", matchIndex, side, position };
+  render();
+}
+
+function closeEmptySlotPicker(): void {
+  emptySlotPicker = null;
+  render();
+}
+
+function fillEmptySlot(target: HTMLElement): void {
+  const schedule = activeClub().currentWeek.lastSchedule;
+  if (!schedule) return;
+  const matchIndex = Number(target.dataset.matchIndex);
+  const side = target.dataset.side === "team1" ? "team1" : "team2";
+  const position = Number(target.dataset.position) === 0 ? 0 : 1;
+  const match = schedule.matches[matchIndex];
+  const player = schedule.players.find((item) => item.playerId === target.dataset.playerId);
+  if (!match || !player || match[side][position]) return;
+  if (!waitingPlayersForSlot(match).some((item) => item.playerId === player.playerId)) return;
+  match[side][position] = player;
+  const validation = validateSchedule(schedule.matches, schedule.players, activeClub().currentWeek.requiredPairs);
+  activeClub().currentWeek.lastSchedule = validation.summary;
+  syncActiveHistory(validation.summary);
+  emptySlotPicker = null;
+  commit();
+}
+
+function waitingPlayersForSlot(match: ScheduledMatch): Player[] {
+  const schedule = activeClub().currentWeek.lastSchedule;
+  if (!schedule) return [];
+  const slotMatches = schedule.matches.filter((item) => item.slotStart === match.slotStart);
+  const slotMinutes = match.slotEnd - match.slotStart;
+  const playedIds = new Set(slotMatches.flatMap((item) => filledPlayers(item).map((player) => player.playerId)));
+  return schedule.players.filter((player) => !playedIds.has(player.playerId)).filter((player) => isWaitingVisible(player, match.slotStart, slotMinutes));
 }
 
 function createHistoryEntry(schedule: ScheduleResult): ScheduleHistoryEntry {

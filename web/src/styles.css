@@ -774,6 +774,75 @@ button:active {
   text-align: center;
 }
 
+.player-chip--empty {
+  border-style: dashed;
+  color: #7a8574;
+  background: #f7faf4;
+}
+
+.empty-slot-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid #dbe5d4;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.empty-slot-picker button {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.empty-slot-picker__player,
+.empty-slot-picker__player--male {
+  border-color: #9bb68e;
+  background: #eef6e9;
+  color: #22321d;
+  font-weight: 850;
+}
+
+.empty-slot-picker__player:hover,
+.empty-slot-picker__player--male:hover {
+  border-color: #6d965c;
+  background: #e0f0d8;
+}
+
+.empty-slot-picker__player--female {
+  border-color: #e2a7bb;
+  background: #fff0f5;
+  color: #7b2443;
+}
+
+.empty-slot-picker__player--female:hover {
+  border-color: #cc7898;
+  background: #ffe3ee;
+}
+
+.empty-slot-picker__close {
+  margin-left: auto;
+  border-color: transparent;
+  background: transparent;
+  color: #667460;
+  font-weight: 750;
+}
+
+.empty-slot-picker__close:hover {
+  border-color: #dbe5d4;
+  background: #f7faf4;
+  color: #344130;
+}
+
+.empty-slot-picker span {
+  align-self: center;
+  color: #667460;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .waiting {
   margin: 0;
   padding: 5px 10px 8px;

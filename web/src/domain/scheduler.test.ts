@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseTimeToMinutes } from "./time";
 import type { Gender, Player, RequiredPair, ScheduledMatch } from "./types";
-import { scheduleMatches, summarizeManualSchedule } from "./scheduler";
+import { displayMatchTypeLabel, scheduleMatches, summarizeManualSchedule } from "./scheduler";
+import { validateSchedule } from "./validation";
 
 describe("scheduleMatches", () => {
   it("prefers same-gender matches when possible", () => {
@@ -46,7 +47,9 @@ describe("scheduleMatches", () => {
     const requiredPairs: RequiredPair[] = [{ player1Id: "m1", player2Id: "f1" }];
 
     const result = scheduleMatches(players, requiredPairs, 30, 1);
-    const teamKeys = result.matches.flatMap((match) => [match.team1, match.team2].map((team) => new Set(team.map((member) => member.playerId))));
+    const teamKeys = result.matches.flatMap((match) =>
+      [match.team1, match.team2].map((team) => new Set(team.filter((member): member is Player => Boolean(member)).map((member) => member.playerId))),
+    );
 
     expect(teamKeys.some((team) => team.has("m1") && team.has("f1"))).toBe(true);
     expect(result.unmetRequiredPairs).toHaveLength(0);
@@ -138,13 +141,61 @@ describe("scheduleMatches", () => {
     expect(result.playersWithTwoSlotWait).toEqual(["M5"]);
     expect(result.unmetRequiredPairs).toEqual(requiredPairs);
   });
+
+  it("recalculates player statistics when a manual schedule slot is emptied", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "19:00"),
+      player("m2", "M2", "M", "18:00", "19:00"),
+      player("m3", "M3", "M", "18:00", "19:00"),
+      player("m4", "M4", "M", "18:00", "19:00"),
+    ];
+    const matches: ScheduledMatch[] = [match("18:00", 1, [players[0], null], [players[2], players[3]], "men_doubles")];
+
+    const result = summarizeManualSchedule(matches, players, []);
+
+    expect(result.playerSummaries.find((summary) => summary.playerId === "m1")?.totalMatches).toBe(1);
+    expect(result.playerSummaries.find((summary) => summary.playerId === "m2")?.totalMatches).toBe(0);
+    expect(result.playerSummaries.find((summary) => summary.playerId === "m3")?.totalMatches).toBe(1);
+    expect(displayMatchTypeLabel(result.matches[0])).toBe("");
+  });
+
+  it("warns about mismatched gender ratios without blocking the match", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("f1", "F1", "F", "18:00", "18:30"),
+      player("f2", "F2", "F", "18:00", "18:30"),
+    ];
+    const matches: ScheduledMatch[] = [match("18:00", 1, [players[0], players[1]], [players[2], players[3]], "mixed_doubles")];
+
+    const validation = validateSchedule(matches, players, []);
+
+    expect(validation.errors).toEqual([]);
+    expect(validation.warnings).toContain("성비가 어긋납니다.");
+    expect(displayMatchTypeLabel(validation.summary.matches[0])).toBe("");
+  });
+
+  it("allows empty slots without gender-ratio warnings", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("m3", "M3", "M", "18:00", "18:30"),
+      player("m4", "M4", "M", "18:00", "18:30"),
+    ];
+    const matches: ScheduledMatch[] = [match("18:00", 1, [players[0], null], [players[2], players[3]], "men_doubles")];
+
+    const validation = validateSchedule(matches, players, []);
+
+    expect(validation.errors).toEqual([]);
+    expect(validation.warnings).not.toContain("성비가 어긋납니다.");
+  });
 });
 
 function match(
   start: string,
   court: number,
-  team1: [Player, Player],
-  team2: [Player, Player],
+  team1: ScheduledMatch["team1"],
+  team2: ScheduledMatch["team2"],
   matchType: ScheduledMatch["matchType"],
 ): ScheduledMatch {
   const slotStart = parseTimeToMinutes(start);

@@ -24,6 +24,21 @@ describe("share image", () => {
     expect(svg).toContain("19:30-20:00");
     expect(svg).toContain("A1/A2 vs B1/B2");
   });
+
+  it("renders empty slots without a match type label", () => {
+    const result = sampleResult();
+    result.matches[0].team1[1] = null;
+
+    const rows = buildShareRows(result);
+    const svg = buildShareSvg(result, "테니스 대진표");
+
+    expect(rows[0].courts[0]).toMatchObject({
+      text: "A1/빈칸 vs B1/B2",
+      type: "",
+    });
+    expect(svg).toContain("A1/빈칸 vs B1/B2");
+    expect(svg).toContain("1코트</text>");
+  });
 });
 
 function sampleResult(): ScheduleResult {
