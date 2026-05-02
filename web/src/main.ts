@@ -313,7 +313,6 @@ function renderRosterRow(player: Player): string {
         <option value="M" ${player.gender === "M" ? "selected" : ""}>남</option>
         <option value="F" ${player.gender === "F" ? "selected" : ""}>여</option>
       </select>
-      <label class="check"><input name="fill" type="checkbox" ${player.canFillMaleSlot ? "checked" : ""} />대체</label>
       <button type="button" data-action="delete-player" data-player-id="${player.playerId}">×</button>
     </form>
   `;
@@ -695,7 +694,7 @@ function updatePlayerFromForm(form: HTMLFormElement): void {
   const data = new FormData(form);
   player.name = String(data.get("name") || player.name).trim() || player.name;
   player.gender = String(data.get("gender")) === "F" ? "F" : "M";
-  player.canFillMaleSlot = data.get("fill") === "on";
+  player.canFillMaleSlot = false;
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -789,7 +788,8 @@ function generateSchedule(): void {
     render();
     return;
   }
-  const schedule = scheduleMatches(players, activeClub().currentWeek.requiredPairs, activeClub().settings.slotMinutes, activeClub().settings.courts);
+  const schedulePlayers = players.map((player) => ({ ...player, canFillMaleSlot: false }));
+  const schedule = scheduleMatches(schedulePlayers, activeClub().currentWeek.requiredPairs, activeClub().settings.slotMinutes, activeClub().settings.courts);
   const historyEntry = createHistoryEntry(schedule);
   activeClub().currentWeek.lastSchedule = schedule;
   activeClub().currentWeek.activeHistoryId = historyEntry.historyId;
