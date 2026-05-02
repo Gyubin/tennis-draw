@@ -1,6 +1,6 @@
 :root {
-  color: #20251f;
-  background: #f7f8f4;
+  color: #172019;
+  background: #f8faf4;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -16,7 +16,8 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: #f7f8f4;
+  background:
+    linear-gradient(180deg, #fbfcf7 0, #f5f8ef 360px, #f8faf4 100%);
 }
 
 button,
@@ -26,12 +27,23 @@ select {
 }
 
 button {
-  border: 1px solid #aab3a2;
+  border: 1px solid #c7d1bf;
   background: #ffffff;
-  color: #20251f;
+  color: #172019;
   min-height: 40px;
   border-radius: 6px;
   cursor: pointer;
+  font-weight: 700;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+button:hover {
+  border-color: #8da47f;
+  box-shadow: 0 1px 0 rgb(23 32 25 / 6%);
 }
 
 button:active {
@@ -39,9 +51,9 @@ button:active {
 }
 
 .app-shell {
-  width: min(1180px, 100%);
+  width: min(920px, 100%);
   margin: 0 auto;
-  padding: 16px;
+  padding: 22px 16px 36px;
 }
 
 .topbar {
@@ -49,18 +61,21 @@ button:active {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 8px 0 10px;
+  padding: 10px 0 14px;
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1.1;
+  letter-spacing: 0;
 }
 
 .topbar p {
-  margin: 6px 0 0;
-  color: #667060;
+  margin: 8px 0 0;
+  color: #667460;
+  font-size: 15px;
+  font-weight: 650;
 }
 
 .topbar__actions {
@@ -71,8 +86,12 @@ button:active {
 }
 
 .text-button {
-  padding: 0 10px;
-  min-height: 38px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-color: #d6dfcf;
+  background: rgb(255 255 255 / 72%);
+  color: #344130;
+  font-size: 14px;
   white-space: nowrap;
 }
 
@@ -95,44 +114,46 @@ button:active {
 }
 
 .settings-band {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 8px;
-  margin-bottom: 8px;
-  background: #e8ede1;
-  border: 1px solid #cad2c2;
+  display: grid;
+  grid-template-columns: minmax(190px, 1.35fr) repeat(4, minmax(92px, 0.72fr)) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #edf4e7;
+  border: 1px solid #d2ddca;
   border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
 }
 
 .settings-band label,
 .date-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #485243;
+  display: grid;
+  gap: 5px;
+  color: #4d5a46;
+  font-size: 12px;
+  font-weight: 800;
   white-space: nowrap;
 }
 
 .settings-band input,
 .settings-band select {
-  width: 74px;
-  height: 44px;
-  border: 1px solid #aab3a2;
+  width: 100%;
+  height: 42px;
+  border: 1px solid #b9c6b0;
   border-radius: 6px;
-  padding: 0 10px;
+  padding: 0 11px;
   background: #ffffff;
-  color: #20251f;
-  font-weight: 700;
+  color: #172019;
+  font-size: 18px;
+  font-weight: 800;
   box-shadow: none;
 }
 
 .time-text {
-  color: #20251f;
+  color: #172019;
   font-variant-numeric: tabular-nums;
-  text-align: center;
-  -webkit-text-fill-color: #20251f;
+  -webkit-text-fill-color: #172019;
 }
 
 .settings-band > button,
@@ -141,11 +162,13 @@ button:active {
 }
 
 .date-picker__button {
-  height: 44px;
-  border-color: #aab3a2;
+  width: 100%;
+  height: 42px;
+  border-color: #b9c6b0;
   background: #ffffff;
-  color: #20251f;
-  font-weight: 700;
+  color: #172019;
+  font-size: 18px;
+  font-weight: 850;
   box-shadow: none;
 }
 
@@ -158,7 +181,30 @@ button:active {
 }
 
 .date-picker__button {
-  min-width: 150px;
+  min-width: 0;
+}
+
+.secondary-action,
+.primary-action {
+  min-height: 42px;
+  padding: 0 16px;
+}
+
+.secondary-action {
+  background: #ffffff;
+  color: #30412d;
+}
+
+.primary-action {
+  border-color: #244d25;
+  background: #244d25;
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgb(36 77 37 / 18%);
+}
+
+.primary-action:hover {
+  border-color: #1b3d1c;
+  background: #1b3d1c;
 }
 
 .calendar {
@@ -168,7 +214,7 @@ button:active {
   z-index: 10;
   width: min(320px, calc(100vw - 48px));
   padding: 10px;
-  border: 1px solid #b9c4b1;
+  border: 1px solid #c6d1be;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 12px 28px rgb(32 37 31 / 18%);
@@ -197,7 +243,7 @@ button:active {
 }
 
 .calendar__weekdays span {
-  color: #667060;
+  color: #667460;
   font-size: 12px;
   text-align: center;
 }
@@ -211,13 +257,13 @@ button:active {
   width: 100%;
   min-width: 0;
   padding: 0;
-  border-color: #d8dfd2;
+  border-color: #d8e1d2;
   font-size: 16px;
 }
 
 .calendar__day--selected {
-  border-color: #4d6a40;
-  background: #dfead8;
+  border-color: #244d25;
+  background: #e3f0d4;
   font-weight: 800;
 }
 
@@ -225,9 +271,9 @@ button:active {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   padding: 8px;
-  border: 1px solid #cad2c2;
+  border: 1px solid #d7dfd1;
   border-radius: 8px;
   background: #ffffff;
 }
@@ -237,7 +283,7 @@ button:active {
   display: grid;
   place-items: center;
   padding: 0 12px;
-  border: 1px solid #aab3a2;
+  border: 1px solid #c7d1bf;
   border-radius: 6px;
   background: #ffffff;
   cursor: pointer;
@@ -250,35 +296,45 @@ button:active {
 .tabs {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 7px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid #dbe3d5;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 58%);
 }
 
 .tab {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 42px;
-  border-color: #c9d1c2;
-  background: #ffffff;
+  gap: 7px;
+  min-height: 44px;
+  border-color: transparent;
+  background: transparent;
+  color: #3c4938;
+  box-shadow: none;
 }
 
 .tab span {
-  color: #667060;
+  color: #687662;
   font-size: 12px;
+  font-weight: 700;
 }
 
 .tab--active {
-  border-color: #4d6a40;
-  background: #e6efe0;
+  border-color: #9db28f;
+  background: #ffffff;
+  color: #172019;
+  box-shadow: 0 2px 6px rgb(23 32 25 / 7%);
 }
 
 .panel {
   background: #ffffff;
-  border: 1px solid #d7ddd0;
+  border: 1px solid #d9e2d2;
   border-radius: 8px;
   overflow: hidden;
+  box-shadow: 0 8px 22px rgb(28 40 25 / 5%);
 }
 
 .panel__header {
@@ -286,17 +342,23 @@ button:active {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 14px;
-  border-bottom: 1px solid #e3e8dc;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e7ece2;
 }
 
 .panel__header--compact {
-  padding: 8px 10px;
+  padding: 16px 18px;
 }
 
 .panel__header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.panel__header span {
+  color: #4d5b47;
+  font-weight: 750;
 }
 
 .roster-list {
@@ -316,7 +378,7 @@ button:active {
 .roster-row select {
   min-width: 0;
   height: 38px;
-  border: 1px solid #cbd3c5;
+  border: 1px solid #ccd7c5;
   border-radius: 6px;
   padding: 0 8px;
   background: #fbfcfa;
@@ -328,7 +390,7 @@ button:active {
   justify-content: center;
   gap: 4px;
   white-space: nowrap;
-  color: #52604c;
+  color: #52624c;
 }
 
 .check input {
@@ -353,15 +415,15 @@ button:active {
   gap: 6px;
   align-items: center;
   padding: 6px;
-  border: 1px solid #dce4d6;
+  border: 1px solid #dce6d6;
   border-radius: 8px;
-  background: #fbfcfa;
+  background: #fbfcf8;
 }
 
 .participant-row label {
   display: grid;
   gap: 2px;
-  color: #667060;
+  color: #667460;
   font-size: 11px;
 }
 
@@ -369,7 +431,7 @@ button:active {
 .participant-row select {
   min-width: 0;
   height: 34px;
-  border: 1px solid #cbd3c5;
+  border: 1px solid #ccd7c5;
   border-radius: 6px;
   padding: 0 6px;
   background: #ffffff;
@@ -396,7 +458,7 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  border-right: 1px solid #e3e8dc;
+  border-right: 1px solid #e7ece2;
 }
 
 .drop-zone:last-child {
@@ -406,7 +468,7 @@ button:active {
 .drop-zone h3 {
   margin: 0 0 4px;
   font-size: 14px;
-  color: #667060;
+  color: #667460;
 }
 
 .player-chip {
@@ -417,24 +479,24 @@ button:active {
   width: 100%;
   min-height: 42px;
   padding: 8px 10px;
-  border-color: #8aa17f;
-  background: #eef6eb;
+  border-color: #9db58f;
+  background: #f0f7eb;
   touch-action: none;
   user-select: none;
 }
 
 .player-chip--female {
-  border-color: #bd8b9d;
-  background: #fbedf2;
+  border-color: #c19aad;
+  background: #fff0f5;
 }
 
 .player-chip span {
-  color: #596653;
+  color: #596953;
   font-size: 13px;
 }
 
 .required-pairs {
-  border-top: 1px solid #e3e8dc;
+  border-top: 1px solid #e7ece2;
   padding: 12px;
 }
 
@@ -453,7 +515,7 @@ button:active {
 .required-pairs__header h3 {
   margin: 0;
   font-size: 14px;
-  color: #667060;
+  color: #667460;
 }
 
 .pair-row {
@@ -466,7 +528,7 @@ button:active {
 .pair-row select {
   min-width: 0;
   height: 38px;
-  border: 1px solid #cbd3c5;
+  border: 1px solid #ccd7c5;
   border-radius: 6px;
   background: #fbfcfa;
   padding: 0 8px;
@@ -474,54 +536,96 @@ button:active {
 
 .helper {
   margin: 0;
-  color: #667060;
+  color: #667460;
   font-size: 13px;
 }
 
 .history-list {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 14px;
 }
 
 .history-row {
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(130px, 220px) 64px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 220px) auto;
+  gap: 10px;
   align-items: center;
-  padding: 8px;
-  border: 1px solid #dce4d6;
+  padding: 10px;
+  border: 1px solid #dce6d6;
   border-radius: 8px;
-  background: #fbfcfa;
+  background: #fbfcf8;
+  box-shadow: 0 1px 0 rgb(23 32 25 / 4%);
 }
 
 .history-row--active {
-  border-color: #4d6a40;
-  background: #eef6eb;
+  border-color: #9db58f;
+  background: #f4faef;
+  box-shadow:
+    inset 4px 0 0 #244d25,
+    0 1px 0 rgb(23 32 25 / 4%);
 }
 
 .history-row__open {
   align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: 54px;
+  padding: 8px 10px 8px 14px;
+  border-color: transparent;
+  background: transparent;
   text-align: left;
+  box-shadow: none;
+}
+
+.history-row__open:hover {
+  border-color: transparent;
+  background: #edf5e8;
+  box-shadow: none;
+}
+
+.history-row__open strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: #172019;
+  font-size: 17px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-row__open span {
-  color: #667060;
-  font-size: 12px;
+  color: #667460;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .history-row input {
   min-width: 0;
-  height: 40px;
-  border: 1px solid #cbd3c5;
+  height: 38px;
+  border: 1px solid #ccd7c5;
   border-radius: 6px;
-  padding: 0 8px;
+  padding: 0 10px;
   background: #ffffff;
+  color: #253022;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.history-row button[data-action="delete-history"] {
+  min-height: 38px;
+  padding: 0 12px;
+  border-color: #ead2cd;
+  background: #fff8f6;
+  color: #8c3a2c;
+  font-size: 13px;
+}
+
+.history-row button[data-action="delete-history"]:hover {
+  border-color: #d8afa6;
+  background: #fff1ed;
 }
 
 .schedule-panel {
@@ -529,14 +633,21 @@ button:active {
 }
 
 .empty {
-  padding: 28px 14px;
-  color: #667060;
+  margin: 12px;
+  padding: 34px 18px;
+  border: 1px dashed #c8d5bf;
+  border-radius: 8px;
+  background: #fbfcf8;
+  color: #667460;
+  font-size: 16px;
+  font-weight: 650;
+  text-align: center;
 }
 
 .status {
   margin: 6px;
   padding: 6px 8px;
-  border: 1px solid #b7c6af;
+  border: 1px solid #b7c9ad;
   border-radius: 8px;
   background: #f0f7ec;
   color: #37522d;
@@ -552,38 +663,38 @@ button:active {
 .status small {
   display: block;
   margin-top: 4px;
-  color: #667060;
+  color: #667460;
 }
 
 .schedule-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 6px;
-  padding: 6px;
+  gap: 8px;
+  padding: 10px;
 }
 
 .slot {
-  border: 1px solid #d9dfd3;
+  border: 1px solid #dbe5d4;
   border-radius: 8px;
-  background: #fbfcfa;
+  background: #fbfcf8;
   overflow: hidden;
 }
 
 .slot h3 {
   margin: 0;
-  padding: 5px 8px;
+  padding: 7px 10px;
   font-size: 13px;
-  background: #eef1ea;
+  background: #f0f4ec;
 }
 
 .match-card {
-  padding: 5px 6px;
-  border-top: 1px solid #e4e8df;
+  padding: 7px 8px;
+  border-top: 1px solid #e7ece2;
 }
 
 .match-card__meta {
-  margin-bottom: 4px;
-  color: #667060;
+  margin-bottom: 5px;
+  color: #667460;
   font-size: 11px;
 }
 
@@ -595,7 +706,7 @@ button:active {
 }
 
 .versus {
-  color: #667060;
+  color: #667460;
   font-size: 12px;
   text-align: center;
 }
@@ -610,8 +721,8 @@ button:active {
 
 .waiting {
   margin: 0;
-  padding: 4px 8px 6px;
-  color: #667060;
+  padding: 5px 10px 8px;
+  color: #667460;
   font-size: 11px;
 }
 
@@ -681,7 +792,7 @@ button:active {
 
 @media (max-width: 820px) {
   .app-shell {
-    padding: 12px;
+    padding: 16px 12px 28px;
   }
 
   .topbar {
@@ -689,7 +800,20 @@ button:active {
   }
 
   .topbar h1 {
-    font-size: 24px;
+    font-size: 28px;
+  }
+
+  .settings-band {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .date-field {
+    grid-column: 1 / -1;
+  }
+
+  .settings-band .secondary-action,
+  .settings-band .primary-action {
+    grid-column: span 2;
   }
 
   .roster-row {
@@ -718,48 +842,58 @@ button:active {
 
   .topbar {
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
+    padding-top: 6px;
+  }
+
+  .topbar p {
+    font-size: 14px;
   }
 
   .topbar__actions {
     width: 100%;
     justify-content: stretch;
+    gap: 7px;
   }
 
   .topbar__actions .text-button {
     flex: 1;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 13px;
   }
 
   .settings-band {
-    gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
   }
 
   .settings-band label,
   .date-field {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
-    flex: 1 1 calc(50% - 6px);
-    align-items: center;
-    gap: 6px;
+    grid-template-columns: none;
+    align-items: stretch;
+    gap: 4px;
   }
 
   .settings-band input,
   .settings-band select {
     width: 100%;
+    height: 42px;
+    font-size: 18px;
   }
 
   .settings-band > button,
   .date-picker__button {
-    flex: 1;
     padding: 0 8px;
   }
 
   .date-field {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
   }
 
   .date-picker {
-    flex: 1;
     min-width: 0;
   }
 
@@ -768,7 +902,12 @@ button:active {
   }
 
   .settings-band label {
-    font-size: 13px;
+    font-size: 12px;
+  }
+
+  .settings-band .secondary-action,
+  .settings-band .primary-action {
+    grid-column: span 1;
   }
 
   .roster-row {
@@ -787,15 +926,30 @@ button:active {
 
   .tabs {
     grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+  }
+
+  .tab {
+    min-height: 42px;
   }
 
   .history-row {
-    grid-template-columns: 1fr 58px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
   }
 
-  .history-row__open,
-  .history-row input {
+  .history-row__open {
     grid-column: 1 / -1;
+  }
+
+  .history-row input {
+    grid-column: 1;
+  }
+
+  .history-row button[data-action="delete-history"] {
+    grid-column: 2;
+    min-width: 58px;
   }
 
   .participant-row {
@@ -822,8 +976,8 @@ button:active {
 
   .schedule-grid {
     grid-template-columns: 1fr;
-    gap: 4px;
-    padding: 4px;
+    gap: 8px;
+    padding: 8px;
   }
 
   .slot h3 {

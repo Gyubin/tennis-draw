@@ -64,8 +64,8 @@ function render(): void {
         <label>종료 ${renderTimeSelect("endTime", state.settings.endTime, "data-field=\"endTime\"")}</label>
         <label>코트 <input data-field="courts" type="number" min="1" max="8" value="${state.settings.courts}" /></label>
         <label>간격 <input data-field="slotMinutes" type="number" min="10" step="5" value="${state.settings.slotMinutes}" /></label>
-        <button data-action="new-week">새 주차</button>
-        <button data-action="generate">대진 생성</button>
+        <button class="secondary-action" data-action="new-week">새 주차</button>
+        <button class="primary-action" data-action="generate">대진 생성</button>
       </section>
 
       ${dataOpen ? renderDataPanel() : ""}
