@@ -2,7 +2,7 @@ import "./styles.css";
 import { nextHistoryName } from "./domain/history";
 import { MATCH_TYPE_LABELS, scheduleMatches } from "./domain/scheduler";
 import { buildCurrentWeekLabel, formatLocalDate, formatMinutes, parseLocalDate, parseTimeToMinutes } from "./domain/time";
-import type { AppSettings, AppState, ClubState, Player, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
+import type { AppSettings, AppState, ClubState, Player, PlayerSummary, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
 import { validateSchedule } from "./domain/validation";
 import { createSharePngBlob } from "./shareImage";
 import { createBackup, defaultClub, loadState, restoreBackup, saveState } from "./storage";
@@ -386,18 +386,7 @@ function renderSchedule(result: ScheduleResult | null, requiredPairs: RequiredPa
         )
         .join("")}
     </div>
-    <div class="summary-table">
-      ${validation.summary.playerSummaries
-        .map(
-          (summary) => `
-        <div>
-          <strong>${escapeHtml(summary.name)}</strong>
-          <span>${summary.totalMatches}경기 · 동성 ${summary.sameGenderDoublesMatches} · 혼복 ${summary.mixedDoublesMatches}</span>
-        </div>
-      `,
-        )
-        .join("")}
-    </div>
+    ${renderScheduleAnalysis(validation.summary, requiredPairs)}
   `;
 }
 
@@ -409,6 +398,78 @@ function renderStatus(errors: string[], warnings: string[]): string {
       ${warnings.length > 0 ? `<small>${warnings.map(escapeHtml).join(" · ")}</small>` : ""}
     </div>
   `;
+}
+
+function renderScheduleAnalysis(summary: ScheduleResult, requiredPairs: RequiredPair[]): string {
+  return `
+    <section class="analysis-section">
+      <div class="analysis-block">
+        <h3>인원별 통계</h3>
+        <div class="player-stats">
+          <div class="player-stat-row player-stat-row--header">
+            <strong>이름</strong>
+            <span>성별</span>
+            <span>총</span>
+            <span>동성</span>
+            <span>혼성</span>
+            <span>동성비율</span>
+          </div>
+          ${summary.playerSummaries.map(renderPlayerSummaryRow).join("")}
+        </div>
+      </div>
+      <div class="analysis-block">
+        <h3>검증항목</h3>
+        <div class="validation-checks">
+          ${renderValidationCheck("동일 페어 반복", renderRepeatedPairCheck(summary))}
+          ${renderValidationCheck("2타임 이상 대기자", summary.playersWithTwoSlotWait.length > 0 ? summary.playersWithTwoSlotWait.map(escapeHtml).join(", ") : "없음")}
+          ${renderValidationCheck("필수 페어 충족 여부", renderRequiredPairCheck(summary, requiredPairs))}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderPlayerSummaryRow(summary: PlayerSummary): string {
+  return `
+    <div class="player-stat-row">
+      <strong>${escapeHtml(summary.name)}</strong>
+      <span>${summary.gender === "M" ? "남" : "여"}</span>
+      <span>${summary.totalMatches}경기</span>
+      <span>${summary.sameGenderDoublesMatches}</span>
+      <span>${summary.mixedDoublesMatches}</span>
+      <span>${Math.round(summary.sameGenderRatio * 100)}%</span>
+    </div>
+  `;
+}
+
+function renderValidationCheck(label: string, value: string): string {
+  return `
+    <div class="validation-check">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${value}</span>
+    </div>
+  `;
+}
+
+function renderRepeatedPairCheck(summary: ScheduleResult): string {
+  if (summary.repeatedTeamPairs.length === 0) return "없음";
+  return summary.repeatedTeamPairs
+    .map((pair) => `${pair.names.map(escapeHtml).join("/")} ${pair.count}회`)
+    .join(", ");
+}
+
+function renderRequiredPairCheck(summary: ScheduleResult, requiredPairs: RequiredPair[]): string {
+  if (requiredPairs.length === 0) return "설정 없음";
+  const unmetPairKeys = new Set(summary.unmetRequiredPairs.map((pair) => `${pair.player1Id}|${pair.player2Id}`));
+  const unmetPairs = requiredPairs.filter((pair) => unmetPairKeys.has(`${pair.player1Id}|${pair.player2Id}`));
+  const metCount = requiredPairs.length - unmetPairs.length;
+  if (unmetPairs.length === 0) return `충족 ${metCount}/${requiredPairs.length}`;
+  return `미충족 ${unmetPairs.length}/${requiredPairs.length}: ${unmetPairs.map((pair) => renderRequiredPairNames(pair, summary.players)).join(", ")}`;
+}
+
+function renderRequiredPairNames(pair: RequiredPair, players: Player[]): string {
+  const playersById = new Map(players.map((player) => [player.playerId, player.name]));
+  return `${escapeHtml(playersById.get(pair.player1Id) ?? pair.player1Id)}/${escapeHtml(playersById.get(pair.player2Id) ?? pair.player2Id)}`;
 }
 
 function renderMatchCard(match: ScheduledMatch, matchIndex: number, readonly: boolean): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTimeToMinutes } from "./time";
-import type { Gender, Player, RequiredPair } from "./types";
-import { scheduleMatches } from "./scheduler";
+import type { Gender, Player, RequiredPair, ScheduledMatch } from "./types";
+import { scheduleMatches, summarizeManualSchedule } from "./scheduler";
 
 describe("scheduleMatches", () => {
   it("prefers same-gender matches when possible", () => {
@@ -84,7 +84,79 @@ describe("scheduleMatches", () => {
     expect(result.matches).toHaveLength(1);
     expect(result.matches[0].matchType).toBe("men_doubles_substitute");
   });
+
+  it("summarizes per-player match statistics", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "19:00"),
+      player("m2", "M2", "M", "18:00", "19:00"),
+      player("m3", "M3", "M", "18:00", "19:00"),
+      player("m4", "M4", "M", "18:00", "19:00"),
+      player("f1", "F1", "F", "18:00", "19:00"),
+      player("f2", "F2", "F", "18:00", "19:00"),
+    ];
+    const matches: ScheduledMatch[] = [
+      match("18:00", 1, [players[0], players[1]], [players[2], players[3]], "men_doubles"),
+      match("18:30", 1, [players[0], players[4]], [players[1], players[5]], "mixed_doubles"),
+    ];
+
+    const result = summarizeManualSchedule(matches, players, []);
+    const m1 = result.playerSummaries.find((summary) => summary.playerId === "m1");
+    const m3 = result.playerSummaries.find((summary) => summary.playerId === "m3");
+
+    expect(m1).toMatchObject({
+      gender: "M",
+      totalMatches: 2,
+      sameGenderDoublesMatches: 1,
+      mixedDoublesMatches: 1,
+      sameGenderRatio: 0.5,
+    });
+    expect(m3).toMatchObject({
+      totalMatches: 1,
+      sameGenderDoublesMatches: 1,
+      mixedDoublesMatches: 0,
+      sameGenderRatio: 1,
+    });
+  });
+
+  it("keeps validation summary fields for the schedule analysis section", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "19:00"),
+      player("m2", "M2", "M", "18:00", "19:00"),
+      player("m3", "M3", "M", "18:00", "19:00"),
+      player("m4", "M4", "M", "18:00", "19:00"),
+      player("m5", "M5", "M", "18:00", "19:00"),
+    ];
+    const requiredPairs: RequiredPair[] = [{ player1Id: "m1", player2Id: "m3" }];
+    const matches: ScheduledMatch[] = [
+      match("18:00", 1, [players[0], players[1]], [players[2], players[3]], "men_doubles"),
+      match("18:30", 1, [players[0], players[1]], [players[2], players[3]], "men_doubles"),
+    ];
+
+    const result = summarizeManualSchedule(matches, players, requiredPairs);
+
+    expect(result.repeatedTeamPairs).toContainEqual({ names: ["M1", "M2"], count: 2 });
+    expect(result.playersWithTwoSlotWait).toEqual(["M5"]);
+    expect(result.unmetRequiredPairs).toEqual(requiredPairs);
+  });
 });
+
+function match(
+  start: string,
+  court: number,
+  team1: [Player, Player],
+  team2: [Player, Player],
+  matchType: ScheduledMatch["matchType"],
+): ScheduledMatch {
+  const slotStart = parseTimeToMinutes(start);
+  return {
+    slotStart,
+    slotEnd: slotStart + 30,
+    court,
+    team1,
+    team2,
+    matchType,
+  };
+}
 
 function player(
   playerId: string,

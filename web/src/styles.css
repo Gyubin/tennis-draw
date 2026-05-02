@@ -781,8 +781,79 @@ button:active {
   font-size: 11px;
 }
 
-.summary-table {
-  display: none;
+.analysis-section {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 12px;
+}
+
+.analysis-block {
+  border: 1px solid #dbe5d4;
+  border-radius: 8px;
+  background: #fbfcf8;
+  overflow: hidden;
+}
+
+.analysis-block h3 {
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e7ece2;
+  background: #f0f4ec;
+  color: #344130;
+  font-size: 14px;
+}
+
+.player-stats,
+.validation-checks {
+  display: grid;
+  gap: 1px;
+  background: #e7ece2;
+}
+
+.player-stat-row,
+.validation-check {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: #ffffff;
+}
+
+.player-stat-row {
+  grid-template-columns: minmax(72px, 1.2fr) 44px repeat(4, minmax(58px, 1fr));
+}
+
+.player-stat-row--header {
+  background: #f7faf4;
+}
+
+.player-stat-row strong,
+.validation-check strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #172019;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-stat-row span,
+.validation-check span {
+  min-width: 0;
+  color: #56634f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.player-stat-row--header strong,
+.player-stat-row--header span {
+  color: #344130;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.validation-check {
+  grid-template-columns: minmax(118px, 0.45fr) minmax(0, 1fr);
 }
 
 .drawer-backdrop {
@@ -810,32 +881,6 @@ button:active {
   gap: 8px;
   align-items: center;
 }
-
-/*
-.summary-table {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 1px;
-  margin: 0 12px 12px;
-  border: 1px solid #e1e6dc;
-  background: #e1e6dc;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.summary-table div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px;
-  background: #ffffff;
-}
-
-.summary-table span {
-  color: #667060;
-  font-size: 13px;
-}
-*/
 
 .drag-ghost {
   position: fixed;
@@ -1076,5 +1121,31 @@ select,
 
   .waiting {
     padding: 3px 6px 5px;
+  }
+
+  .analysis-section {
+    padding: 0 8px 10px;
+  }
+
+  .player-stat-row {
+    grid-template-columns: minmax(52px, 1fr) 28px 38px 34px 34px 46px;
+    gap: 4px;
+    padding: 8px 6px;
+  }
+
+  .player-stat-row span,
+  .validation-check span {
+    font-size: 11px;
+  }
+
+  .player-stat-row--header strong,
+  .player-stat-row--header span {
+    font-size: 10px;
+  }
+
+  .validation-check {
+    grid-template-columns: 1fr;
+    gap: 3px;
+    padding: 8px;
   }
 }
