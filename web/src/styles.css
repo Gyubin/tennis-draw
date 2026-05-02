@@ -466,7 +466,7 @@ button:active {
 
 .participant-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 92px 92px 54px;
+  grid-template-columns: minmax(120px, 1fr) minmax(192px, auto) 54px;
   gap: 6px;
   align-items: center;
   padding: 6px;
@@ -475,11 +475,29 @@ button:active {
   background: #fbfcf8;
 }
 
-.participant-row label {
+.inactive-participant-row {
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 6px;
+  align-items: center;
+  padding: 6px;
+  border: 1px solid #dce6d6;
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.participant-row__times {
+  display: grid;
+  grid-template-columns: minmax(86px, 1fr) auto minmax(86px, 1fr);
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+
+.participant-row__times span {
   color: #667460;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .participant-row input,
@@ -492,7 +510,15 @@ button:active {
   background: #ffffff;
 }
 
-.participant-row button[data-action="remove-participant"] {
+.participant-row .time-text {
+  padding-right: 28px;
+  background-position: right 8px center;
+  background-size: 16px 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.participant-row button[data-action="remove-participant"],
+.inactive-participant-row button[data-action="add-participant"] {
   min-height: 34px;
   padding: 0 6px;
 }
@@ -536,8 +562,15 @@ button:active {
   padding: 8px 10px;
   border-color: #9db58f;
   background: #f0f7eb;
-  touch-action: none;
+  touch-action: manipulation;
   user-select: none;
+}
+
+.player-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .player-chip--female {
@@ -1143,12 +1176,24 @@ select,
   }
 
   .participant-row {
-    grid-template-columns: minmax(86px, 1fr) 78px 78px 48px;
+    grid-template-columns: minmax(0, 1fr) 50px;
+    gap: 6px 8px;
   }
 
   .participant-row .player-chip {
     min-height: 34px;
     padding: 5px 6px;
+  }
+
+  .participant-row__times {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  }
+
+  .participant-row button[data-action="remove-participant"] {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .columns {

@@ -1,15 +1,14 @@
 import "./styles.css";
 import { nextHistoryName } from "./domain/history";
 import { displayMatchTypeLabel, filledPlayers, scheduleMatches } from "./domain/scheduler";
+import { comparePlayerSummaries } from "./domain/sorting";
 import { buildCurrentWeekLabel, formatLocalDate, formatMinutes, parseLocalDate, parseTimeToMinutes } from "./domain/time";
 import type { AppSettings, AppState, ClubState, Player, PlayerSummary, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
 import { validateSchedule } from "./domain/validation";
 import { createSharePngBlob } from "./shareImage";
 import { createBackup, defaultClub, loadState, restoreBackup, saveState } from "./storage";
 
-type DragPayload =
-  | { kind: "participant"; playerId: string; from: "active" | "inactive" }
-  | { kind: "schedule"; matchIndex: number; side: "team1" | "team2"; position: 0 | 1 };
+type DragPayload = { kind: "schedule"; matchIndex: number; side: "team1" | "team2"; position: 0 | 1 };
 
 let state: AppState = loadState();
 let activeTab: "schedule" | "participants" | "pairs" | "history" = "schedule";
@@ -32,6 +31,8 @@ const app = appElement;
 const TIME_OPTION_START = parseTimeToMinutes("06:00");
 const TIME_OPTION_END = parseTimeToMinutes("23:30");
 const TIME_OPTION_STEP = 30;
+const TOUCH_DRAG_DELAY_MS = 500;
+const DRAG_MOVE_THRESHOLD_PX = 5;
 
 render();
 
@@ -183,7 +184,7 @@ function renderParticipantsPanel(): string {
         </div>
         <div class="drop-zone" data-participant-zone="inactive">
           <h3>불참</h3>
-          ${participants(false).map((player) => renderPlayerChip(player, { zone: "inactive" })).join("")}
+          ${participants(false).map(renderInactiveParticipantRow).join("")}
         </div>
       </div>
     </section>
@@ -325,11 +326,23 @@ function renderParticipantRow(player: Player): string {
   const invalid = player.availableEnd <= player.availableStart;
   return `
     <div class="participant-row ${invalid ? "participant-row--invalid" : ""}">
-      ${renderPlayerChip(player, { zone: "active" })}
-      <label>시작 ${renderTimeSelect("start", player.availableStart, `data-player-time="${player.playerId}" data-time-field="start"`)}</label>
-      <label>종료 ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end"`)}</label>
+      ${renderPlayerChip(player)}
+      <div class="participant-row__times" aria-label="참가 가능 시간">
+        ${renderTimeSelect("start", player.availableStart, `data-player-time="${player.playerId}" data-time-field="start" aria-label="${escapeHtml(`${player.name} 시작 시간`)}"`)}
+        <span aria-hidden="true">-</span>
+        ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end" aria-label="${escapeHtml(`${player.name} 종료 시간`)}"`)}
+      </div>
       <button type="button" data-action="remove-participant" data-player-id="${player.playerId}">불참</button>
       ${invalid ? `<small>끝 시간이 시작보다 늦어야 합니다.</small>` : ""}
+    </div>
+  `;
+}
+
+function renderInactiveParticipantRow(player: Player): string {
+  return `
+    <div class="inactive-participant-row">
+      ${renderPlayerChip(player)}
+      <button type="button" data-action="add-participant" data-player-id="${player.playerId}">참가</button>
     </div>
   `;
 }
@@ -356,15 +369,11 @@ function timeOptions(selectedMinutes: number): number[] {
   return options;
 }
 
-function renderPlayerChip(player: Player, options: { zone: "active" | "inactive" }): string {
+function renderPlayerChip(player: Player): string {
   return `
-    <button class="player-chip ${player.gender === "F" ? "player-chip--female" : ""}"
-      data-draggable="participant"
-      data-player-id="${player.playerId}"
-      data-zone="${options.zone}"
-      type="button">
+    <div class="player-chip ${player.gender === "F" ? "player-chip--female" : ""}" data-player-id="${player.playerId}">
       <strong>${escapeHtml(player.name)}</strong><span>${player.gender === "M" ? "남" : "여"}</span>
-    </button>
+    </div>
   `;
 }
 
@@ -417,7 +426,7 @@ function renderScheduleAnalysis(summary: ScheduleResult, requiredPairs: Required
             <span>혼성</span>
             <span>동성비율</span>
           </div>
-          ${summary.playerSummaries.map(renderPlayerSummaryRow).join("")}
+          ${[...summary.playerSummaries].sort(comparePlayerSummaries).map(renderPlayerSummaryRow).join("")}
         </div>
       </div>
       <div class="analysis-block">
@@ -623,6 +632,7 @@ function handleClick(event: Event): void {
   if (action === "select-date") selectDate(actionTarget.dataset.date ?? "");
   if (action === "add-player") addPlayer();
   if (action === "delete-player") deletePlayer(actionTarget.dataset.playerId ?? "");
+  if (action === "add-participant") addParticipant(actionTarget.dataset.playerId ?? "");
   if (action === "remove-participant") removeParticipant(actionTarget.dataset.playerId ?? "");
   if (action === "open-empty-slot") openEmptySlotPicker(actionTarget);
   if (action === "close-empty-slot") closeEmptySlotPicker();
@@ -735,46 +745,116 @@ function selectDate(dateLabel: string): void {
 
 function startDrag(event: PointerEvent): void {
   const element = event.currentTarget as HTMLElement;
+  if (element.dataset.draggable !== "schedule") return;
+
   const startX = event.clientX;
   const startY = event.clientY;
+  if (event.pointerType === "touch") {
+    startDelayedTouchDrag(element, event, startX, startY);
+    return;
+  }
+
+  beginScheduleDrag(element, event.pointerId, event.clientX, event.clientY);
+  bindActiveDragListeners(element, event.pointerId, startX, startY);
+}
+
+function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX: number, startY: number): void {
+  let active = false;
+  let cancelled = false;
+  const pointerId = event.pointerId;
+  const timer = window.setTimeout(() => {
+    if (cancelled) return;
+    active = true;
+    beginScheduleDrag(element, pointerId, startX, startY);
+  }, TOUCH_DRAG_DELAY_MS);
+
+  const cleanup = () => {
+    window.clearTimeout(timer);
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
+  };
+  const cancel = () => {
+    cancelled = true;
+    cleanup();
+  };
+  const onMove = (moveEvent: PointerEvent) => {
+    if (moveEvent.pointerId !== pointerId) return;
+    if (!active && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) {
+      cancel();
+      return;
+    }
+    if (active) {
+      moveEvent.preventDefault();
+      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
+      moveGhost(moveEvent.clientX, moveEvent.clientY);
+    }
+  };
+  const onUp = (upEvent: PointerEvent) => {
+    if (upEvent.pointerId !== pointerId) return;
+    cleanup();
+    if (!active) return;
+    releasePointerCapture(element, pointerId);
+    finishDrag(upEvent.clientX, upEvent.clientY);
+    suppressNextScheduleClick = true;
+  };
+  const onCancel = (cancelEvent: PointerEvent) => {
+    if (cancelEvent.pointerId !== pointerId) return;
+    cleanup();
+    if (!active) return;
+    releasePointerCapture(element, pointerId);
+    cancelDrag();
+    suppressNextScheduleClick = true;
+  };
+
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onCancel);
+}
+
+function beginScheduleDrag(element: HTMLElement, pointerId: number, clientX: number, clientY: number): void {
   dragMoved = false;
-  element.setPointerCapture(event.pointerId);
+  setPointerCapture(element, pointerId);
   const rect = element.getBoundingClientRect();
   ghost = element.cloneNode(true) as HTMLElement;
   ghost.classList.add("drag-ghost");
   ghost.style.width = `${rect.width}px`;
   document.body.appendChild(ghost);
-  moveGhost(event.clientX, event.clientY);
+  moveGhost(clientX, clientY);
+  dragPayload = {
+    kind: "schedule",
+    matchIndex: Number(element.dataset.matchIndex),
+    side: element.dataset.side === "team1" ? "team1" : "team2",
+    position: Number(element.dataset.position) === 0 ? 0 : 1,
+  };
+}
 
-  if (element.dataset.draggable === "participant") {
-    dragPayload = {
-      kind: "participant",
-      playerId: element.dataset.playerId ?? "",
-      from: element.dataset.zone === "active" ? "active" : "inactive",
-    };
-  } else {
-    dragPayload = {
-      kind: "schedule",
-      matchIndex: Number(element.dataset.matchIndex),
-      side: element.dataset.side === "team1" ? "team1" : "team2",
-      position: Number(element.dataset.position) === 0 ? 0 : 1,
-    };
-  }
-
+function bindActiveDragListeners(element: HTMLElement, pointerId: number, startX: number, startY: number): void {
   const onMove = (moveEvent: PointerEvent) => {
-    if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 5) dragMoved = true;
+    if (moveEvent.pointerId !== pointerId) return;
+    if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
     moveGhost(moveEvent.clientX, moveEvent.clientY);
   };
   const onUp = (upEvent: PointerEvent) => {
-    const wasScheduleDrag = dragPayload?.kind === "schedule";
-    element.releasePointerCapture(event.pointerId);
+    if (upEvent.pointerId !== pointerId) return;
+    releasePointerCapture(element, pointerId);
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
     finishDrag(upEvent.clientX, upEvent.clientY);
-    suppressNextScheduleClick = wasScheduleDrag && dragMoved;
+    suppressNextScheduleClick = dragMoved;
+  };
+  const onCancel = (cancelEvent: PointerEvent) => {
+    if (cancelEvent.pointerId !== pointerId) return;
+    releasePointerCapture(element, pointerId);
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
+    cancelDrag();
   };
   document.addEventListener("pointermove", onMove);
   document.addEventListener("pointerup", onUp);
+  document.addEventListener("pointercancel", onCancel);
 }
 
 function finishDrag(clientX: number, clientY: number): void {
@@ -783,23 +863,37 @@ function finishDrag(clientX: number, clientY: number): void {
   const payload = dragPayload;
   dragPayload = null;
   if (!payload) return;
-  if (payload.kind === "schedule" && !dragMoved) return;
-  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-participant-zone], [data-draggable='schedule']");
+  if (!dragMoved) return;
+  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
   if (!target) return;
 
-  if (payload.kind === "participant") {
-    const zone = target.dataset.participantZone ?? target.closest<HTMLElement>("[data-participant-zone]")?.dataset.participantZone;
-    if (zone === "active") addParticipant(payload.playerId);
-    if (zone === "inactive") removeParticipant(payload.playerId);
-  }
+  swapSchedulePlayers(payload, {
+    kind: "schedule",
+    matchIndex: Number(target.dataset.matchIndex),
+    side: target.dataset.side === "team1" ? "team1" : "team2",
+    position: Number(target.dataset.position) === 0 ? 0 : 1,
+  });
+}
 
-  if (payload.kind === "schedule" && target.dataset.draggable === "schedule") {
-    swapSchedulePlayers(payload, {
-      kind: "schedule",
-      matchIndex: Number(target.dataset.matchIndex),
-      side: target.dataset.side === "team1" ? "team1" : "team2",
-      position: Number(target.dataset.position) === 0 ? 0 : 1,
-    });
+function cancelDrag(): void {
+  ghost?.remove();
+  ghost = null;
+  dragPayload = null;
+}
+
+function setPointerCapture(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId);
+  } catch {
+    // Pointer capture can fail if the long-press pointer was cancelled by the browser.
+  }
+}
+
+function releasePointerCapture(element: HTMLElement, pointerId: number): void {
+  try {
+    if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+  } catch {
+    // Ignore stale pointer capture state after browser-level cancellation.
   }
 }
 
@@ -971,7 +1065,7 @@ function updatePairFromRow(row: HTMLElement): void {
   commit();
 }
 
-function swapSchedulePlayers(source: Extract<DragPayload, { kind: "schedule" }>, target: Extract<DragPayload, { kind: "schedule" }>): void {
+function swapSchedulePlayers(source: DragPayload, target: DragPayload): void {
   const schedule = activeClub().currentWeek.lastSchedule;
   if (!schedule) return;
   const sourceMatch = schedule.matches[source.matchIndex];
