@@ -17,7 +17,7 @@ describe("share image", () => {
   it("renders an svg containing every match", () => {
     const result = sampleResult();
 
-    const svg = buildShareSvg(result, "풍납 대진표");
+    const svg = buildShareSvg(result, "테니스 대진표");
 
     expect(svg).toContain("총 12경기");
     expect(svg).toContain("17:00-17:30");

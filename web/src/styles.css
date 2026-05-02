@@ -114,7 +114,8 @@ button:active {
   white-space: nowrap;
 }
 
-.settings-band input {
+.settings-band input,
+.settings-band select {
   width: 74px;
 }
 
@@ -271,7 +272,8 @@ button:active {
   font-size: 11px;
 }
 
-.participant-row input {
+.participant-row input,
+.participant-row select {
   min-width: 0;
   height: 34px;
   border: 1px solid #cbd3c5;
@@ -592,7 +594,8 @@ button:active {
     flex: 1 1 calc(50% - 6px);
   }
 
-  .settings-band input {
+  .settings-band input,
+  .settings-band select {
     width: 100%;
   }
 

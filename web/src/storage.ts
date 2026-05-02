@@ -1,7 +1,8 @@
 import { buildCurrentWeekLabel, parseTimeToMinutes } from "./domain/time";
 import type { AppState, BackupV1, Player } from "./domain/types";
 
-const STORAGE_KEY = "simple-tennis-matcher:v1";
+const STORAGE_KEY = "tennis-draw:v1";
+const LEGACY_STORAGE_KEY = "simple-tennis-matcher:v1";
 
 export function defaultState(): AppState {
   const roster = sampleRoster();
@@ -24,7 +25,7 @@ export function defaultState(): AppState {
 }
 
 export function loadState(storage: Storage = window.localStorage): AppState {
-  const raw = storage.getItem(STORAGE_KEY);
+  const raw = storage.getItem(STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return defaultState();
   try {
     const parsed = JSON.parse(raw) as AppState;

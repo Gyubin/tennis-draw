@@ -68,7 +68,7 @@ export function buildShareSvg(result: ScheduleResult, title: string): string {
       <text x="20" y="44" font-size="34" font-weight="900" fill="#111811">${escapeXml(title)}</text>
       <text x="20" y="74" font-size="22" font-weight="700" fill="#4d5947">총 ${result.matches.length}경기 · ${rows.length}타임</text>
       ${cells}
-      <text x="20" y="${height - 16}" font-size="18" fill="#65705f">Simple Tennis Matcher</text>
+      <text x="20" y="${height - 16}" font-size="18" fill="#65705f">Tennis Draw</text>
     </svg>
   `;
 }

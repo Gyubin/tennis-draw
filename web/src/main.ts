@@ -21,6 +21,9 @@ let ghost: HTMLElement | null = null;
 const appElement = document.querySelector<HTMLDivElement>("#app");
 if (!appElement) throw new Error("App root not found.");
 const app = appElement;
+const TIME_OPTION_START = parseTimeToMinutes("06:00");
+const TIME_OPTION_END = parseTimeToMinutes("23:30");
+const TIME_OPTION_STEP = 30;
 
 render();
 
@@ -35,7 +38,7 @@ function render(): void {
     <main class="app-shell">
       <section class="topbar">
         <div>
-          <h1>풍납 대진표</h1>
+          <h1>테니스 대진표</h1>
           <p>${state.currentWeek.weekLabel} · ${formatMinutes(state.settings.startTime)}-${formatMinutes(state.settings.endTime)} · ${state.settings.courts}코트 · ${state.settings.slotMinutes}분</p>
         </div>
         <div class="topbar__actions">
@@ -46,8 +49,8 @@ function render(): void {
       </section>
 
       <section class="settings-band">
-        <label>시작 <input data-field="startTime" class="time-text" type="text" inputmode="numeric" value="${formatMinutes(state.settings.startTime)}" /></label>
-        <label>끝 <input data-field="endTime" class="time-text" type="text" inputmode="numeric" value="${formatMinutes(state.settings.endTime)}" /></label>
+        <label>시작 ${renderTimeSelect("startTime", state.settings.startTime, "data-field=\"startTime\"")}</label>
+        <label>종료 ${renderTimeSelect("endTime", state.settings.endTime, "data-field=\"endTime\"")}</label>
         <label>코트 <input data-field="courts" type="number" min="1" max="8" value="${state.settings.courts}" /></label>
         <label>간격 <input data-field="slotMinutes" type="number" min="10" step="5" value="${state.settings.slotMinutes}" /></label>
         <button data-action="new-week">새 주차</button>
@@ -199,12 +202,34 @@ function renderParticipantRow(player: Player): string {
   return `
     <div class="participant-row ${invalid ? "participant-row--invalid" : ""}">
       ${renderPlayerChip(player, { zone: "active" })}
-      <label>시작 <input data-player-time="${player.playerId}" data-time-field="start" class="time-text" type="text" inputmode="numeric" value="${formatMinutes(player.availableStart)}" /></label>
-      <label>끝 <input data-player-time="${player.playerId}" data-time-field="end" class="time-text" type="text" inputmode="numeric" value="${formatMinutes(player.availableEnd)}" /></label>
+      <label>시작 ${renderTimeSelect("start", player.availableStart, `data-player-time="${player.playerId}" data-time-field="start"`)}</label>
+      <label>종료 ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end"`)}</label>
       <button type="button" data-action="remove-participant" data-player-id="${player.playerId}">불참</button>
       ${invalid ? `<small>끝 시간이 시작보다 늦어야 합니다.</small>` : ""}
     </div>
   `;
+}
+
+function renderTimeSelect(name: string, selectedMinutes: number, attributes: string): string {
+  return `
+    <select name="${name}" class="time-text" ${attributes}>
+      ${timeOptions(selectedMinutes)
+        .map((minutes) => `<option value="${formatMinutes(minutes)}" ${minutes === selectedMinutes ? "selected" : ""}>${formatMinutes(minutes)}</option>`)
+        .join("")}
+    </select>
+  `;
+}
+
+function timeOptions(selectedMinutes: number): number[] {
+  const options: number[] = [];
+  for (let minutes = TIME_OPTION_START; minutes <= TIME_OPTION_END; minutes += TIME_OPTION_STEP) {
+    options.push(minutes);
+  }
+  if (!options.includes(selectedMinutes)) {
+    options.push(selectedMinutes);
+    options.sort((a, b) => a - b);
+  }
+  return options;
 }
 
 function renderPlayerChip(player: Player, options: { zone: "active" | "inactive" }): string {
@@ -319,7 +344,7 @@ function bindEvents(): void {
   app.querySelectorAll<HTMLElement>("[data-pair-index]").forEach((row) => {
     row.addEventListener("change", () => updatePairFromRow(row));
   });
-  app.querySelectorAll<HTMLInputElement>("[data-player-time]").forEach((input) => {
+  app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-player-time]").forEach((input) => {
     input.addEventListener("change", () => updateParticipantTime(input));
   });
 
@@ -465,7 +490,7 @@ function updateSettingsTime(field: "startTime" | "endTime", value: string): void
   state.currentWeek.lastSchedule = null;
 }
 
-function updateParticipantTime(input: HTMLInputElement): void {
+function updateParticipantTime(input: HTMLInputElement | HTMLSelectElement): void {
   const player = state.roster.find((item) => item.playerId === input.dataset.playerTime);
   if (!player) return;
   const minutes = parseTimeToMinutes(input.value);
@@ -605,7 +630,7 @@ function exportBackup(): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `tennis-matcher-${state.currentWeek.weekLabel}.json`;
+  link.download = `tennis-draw-${state.currentWeek.weekLabel}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -619,8 +644,8 @@ async function shareImage(): Promise<void> {
   }
   sharingImage = true;
   try {
-    const blob = await createSharePngBlob(result, `풍납 대진표 ${state.currentWeek.weekLabel}`);
-    const file = new File([blob], `tennis-matcher-${state.currentWeek.weekLabel}.png`, { type: "image/png" });
+    const blob = await createSharePngBlob(result, `테니스 대진표 ${state.currentWeek.weekLabel}`);
+    const file = new File([blob], `tennis-draw-${state.currentWeek.weekLabel}.png`, { type: "image/png" });
     const navigatorWithShare = navigator as Navigator & {
       canShare?: (data: ShareData) => boolean;
       share?: (data: ShareData) => Promise<void>;
@@ -628,7 +653,7 @@ async function shareImage(): Promise<void> {
     if (navigatorWithShare.canShare?.({ files: [file] }) && navigatorWithShare.share) {
       await navigatorWithShare.share({
         files: [file],
-        title: "풍납 대진표",
+        title: "테니스 대진표",
       });
       return;
     }

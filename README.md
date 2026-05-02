@@ -1,4 +1,4 @@
-# Simple Tennis Matcher
+# Tennis Draw
 
 Mobile-first tennis doubles scheduler for GitHub Pages.
 

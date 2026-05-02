@@ -16,6 +16,16 @@ describe("storage", () => {
     saveState(state, storage);
 
     expect(loadState(storage).roster[0].name).toBe("Changed");
+    expect(storage.getItem("tennis-draw:v1")).not.toBeNull();
+  });
+
+  it("loads legacy simple tennis matcher data", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    state.roster[0].name = "Legacy";
+    storage.setItem("simple-tennis-matcher:v1", JSON.stringify(state));
+
+    expect(loadState(storage).roster[0].name).toBe("Legacy");
   });
 
   it("adds default operating times to older saved state", () => {
@@ -28,7 +38,7 @@ describe("storage", () => {
         slotMinutes: state.settings.slotMinutes,
       },
     };
-    storage.setItem("simple-tennis-matcher:v1", JSON.stringify(legacy));
+    storage.setItem("tennis-draw:v1", JSON.stringify(legacy));
 
     const restored = loadState(storage);
 
@@ -38,7 +48,7 @@ describe("storage", () => {
 
   it("falls back to defaults on corrupt JSON", () => {
     const storage = memoryStorage();
-    storage.setItem("simple-tennis-matcher:v1", "{");
+    storage.setItem("tennis-draw:v1", "{");
 
     expect(loadState(storage).schemaVersion).toBe(1);
   });
