@@ -563,6 +563,7 @@ function addClub(): void {
 function switchClub(clubId: string): void {
   if (!state.clubs.some((club) => club.clubId === clubId)) return;
   state.activeClubId = clubId;
+  clubOpen = false;
   selectedHistoryId = null;
   calendarOpen = false;
   calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
