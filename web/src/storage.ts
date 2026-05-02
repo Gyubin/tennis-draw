@@ -1,20 +1,27 @@
 import { buildCurrentWeekLabel, parseLocalDate, parseTimeToMinutes } from "./domain/time";
-import type { AppState, BackupV1, Player } from "./domain/types";
+import type { AppSettings, AppState, AppStateV1, BackupV1, BackupV2, ClubState, Player } from "./domain/types";
 
-const STORAGE_KEY = "tennis-draw:v1";
+const STORAGE_KEY = "tennis-draw:v2";
+const V1_STORAGE_KEY = "tennis-draw:v1";
 const LEGACY_STORAGE_KEY = "simple-tennis-matcher:v1";
+const DEFAULT_CLUB_ID = "club-default";
+const DEFAULT_CLUB_NAME = "기본 클럽";
 
 export function defaultState(): AppState {
-  const roster = sampleRoster();
+  const club = defaultClub(DEFAULT_CLUB_ID, DEFAULT_CLUB_NAME, sampleRoster());
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    activeClubId: club.clubId,
+    clubs: [club],
+  };
+}
+
+export function defaultClub(clubId: string, name: string, roster: Player[] = []): ClubState {
+  return {
+    clubId,
+    name,
     roster,
-    settings: {
-      courts: 2,
-      slotMinutes: 30,
-      startTime: parseTimeToMinutes("18:00"),
-      endTime: parseTimeToMinutes("20:00"),
-    },
+    settings: defaultSettings(),
     currentWeek: {
       weekLabel: buildCurrentWeekLabel(),
       participantIds: roster.map((player) => player.playerId),
@@ -27,18 +34,13 @@ export function defaultState(): AppState {
 }
 
 export function loadState(storage: Storage = window.localStorage): AppState {
-  const raw = storage.getItem(STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY);
+  const raw = storage.getItem(STORAGE_KEY) ?? storage.getItem(V1_STORAGE_KEY) ?? storage.getItem(LEGACY_STORAGE_KEY);
   if (!raw) return defaultState();
   try {
-    const parsed = JSON.parse(raw) as AppState;
-    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.roster)) return defaultState();
-    return normalizeState({
-      ...defaultState(),
-      ...parsed,
-      settings: { ...defaultState().settings, ...parsed.settings },
-      currentWeek: { ...defaultState().currentWeek, ...parsed.currentWeek },
-      scheduleHistory: parsed.scheduleHistory ?? [],
-    });
+    const parsed = JSON.parse(raw) as AppState | AppStateV1;
+    if (parsed.schemaVersion === 2 && Array.isArray(parsed.clubs)) return normalizeState(parsed);
+    if (parsed.schemaVersion === 1 && Array.isArray(parsed.roster)) return migrateV1State(parsed);
+    return defaultState();
   } catch {
     return defaultState();
   }
@@ -48,55 +50,106 @@ export function saveState(state: AppState, storage: Storage = window.localStorag
   storage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-export function createBackup(state: AppState): BackupV1 {
+export function createBackup(state: AppState): BackupV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     state,
   };
 }
 
 export function restoreBackup(raw: string): AppState {
-  const parsed = JSON.parse(raw) as BackupV1;
-  if (parsed.schemaVersion !== 1 || parsed.state.schemaVersion !== 1) {
-    throw new Error("지원하지 않는 백업 파일입니다.");
+  const parsed = JSON.parse(raw) as BackupV1 | BackupV2;
+  if (parsed.schemaVersion === 2 && parsed.state.schemaVersion === 2) {
+    return normalizeState(parsed.state);
   }
-  return normalizeState({
-    ...defaultState(),
-    ...parsed.state,
-    settings: { ...defaultState().settings, ...parsed.state.settings },
-    currentWeek: { ...defaultState().currentWeek, ...parsed.state.currentWeek },
-    scheduleHistory: parsed.state.scheduleHistory ?? [],
+  if (parsed.schemaVersion === 1 && parsed.state.schemaVersion === 1) {
+    return migrateV1State(parsed.state);
+  }
+  throw new Error("지원하지 않는 백업 파일입니다.");
+}
+
+function migrateV1State(state: AppStateV1): AppState {
+  const defaults = defaultState();
+  const club = normalizeClub({
+    clubId: DEFAULT_CLUB_ID,
+    name: DEFAULT_CLUB_NAME,
+    roster: state.roster,
+    settings: { ...defaultSettings(), ...state.settings },
+    currentWeek: { ...defaults.clubs[0].currentWeek, ...state.currentWeek },
+    scheduleHistory: state.scheduleHistory ?? [],
   });
+  return {
+    schemaVersion: 2,
+    activeClubId: club.clubId,
+    clubs: [club],
+  };
 }
 
 function normalizeState(state: AppState): AppState {
-  const scheduleHistory = Array.isArray(state.scheduleHistory) ? state.scheduleHistory : [];
-  const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === state.currentWeek.activeHistoryId)
-    ? state.currentWeek.activeHistoryId
-    : null;
-  const weekLabel = normalizeDateLabel(state.currentWeek.weekLabel);
+  const fallback = defaultState();
+  const clubs = (Array.isArray(state.clubs) && state.clubs.length > 0 ? state.clubs : fallback.clubs).map(normalizeClub);
+  const activeClubId = clubs.some((club) => club.clubId === state.activeClubId) ? state.activeClubId : clubs[0].clubId;
   return {
-    ...state,
-    settings: {
-      ...state.settings,
-      startTime: state.settings.startTime ?? parseTimeToMinutes("18:00"),
-      endTime: state.settings.endTime ?? parseTimeToMinutes("20:00"),
-    },
-    roster: state.roster.map((player) => ({
-      ...player,
-      availableStart: player.availableStart ?? parseTimeToMinutes("18:00"),
-      availableEnd: player.availableEnd ?? parseTimeToMinutes("20:00"),
-      canFillMaleSlot: player.canFillMaleSlot ?? false,
-      showLateJoin: player.showLateJoin ?? false,
-      showEarlyLeave: player.showEarlyLeave ?? false,
-    })),
+    schemaVersion: 2,
+    activeClubId,
+    clubs,
+  };
+}
+
+function normalizeClub(club: ClubState): ClubState {
+  const fallback = defaultClub(club.clubId || createClubId(), club.name || DEFAULT_CLUB_NAME);
+  const roster = Array.isArray(club.roster) ? club.roster.map(normalizePlayer) : [];
+  const rosterIds = new Set(roster.map((player) => player.playerId));
+  const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory : [];
+  const currentWeek = { ...fallback.currentWeek, ...club.currentWeek };
+  const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === currentWeek.activeHistoryId)
+    ? currentWeek.activeHistoryId
+    : null;
+  return {
+    clubId: club.clubId || fallback.clubId,
+    name: (club.name || fallback.name).trim() || fallback.name,
+    roster,
+    settings: normalizeSettings({ ...fallback.settings, ...club.settings }),
     currentWeek: {
-      ...state.currentWeek,
-      weekLabel,
+      ...currentWeek,
+      weekLabel: normalizeDateLabel(currentWeek.weekLabel),
+      participantIds: Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => rosterIds.has(id)) : [],
+      requiredPairs: Array.isArray(currentWeek.requiredPairs)
+        ? currentWeek.requiredPairs.filter((pair) => rosterIds.has(pair.player1Id) && rosterIds.has(pair.player2Id))
+        : [],
       activeHistoryId,
     },
     scheduleHistory,
+  };
+}
+
+function normalizeSettings(settings: AppSettings): AppSettings {
+  return {
+    courts: settings.courts ?? 2,
+    slotMinutes: settings.slotMinutes ?? 30,
+    startTime: settings.startTime ?? parseTimeToMinutes("18:00"),
+    endTime: settings.endTime ?? parseTimeToMinutes("20:00"),
+  };
+}
+
+function normalizePlayer(player: Player): Player {
+  return {
+    ...player,
+    availableStart: player.availableStart ?? parseTimeToMinutes("18:00"),
+    availableEnd: player.availableEnd ?? parseTimeToMinutes("20:00"),
+    canFillMaleSlot: player.canFillMaleSlot ?? false,
+    showLateJoin: player.showLateJoin ?? false,
+    showEarlyLeave: player.showEarlyLeave ?? false,
+  };
+}
+
+function defaultSettings(): AppSettings {
+  return {
+    courts: 2,
+    slotMinutes: 30,
+    startTime: parseTimeToMinutes("18:00"),
+    endTime: parseTimeToMinutes("20:00"),
   };
 }
 
@@ -107,6 +160,10 @@ function normalizeDateLabel(value: string): string {
   } catch {
     return buildCurrentWeekLabel();
   }
+}
+
+function createClubId(): string {
+  return crypto.randomUUID?.() ?? `club-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function sampleRoster(): Player[] {

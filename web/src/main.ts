@@ -2,10 +2,10 @@ import "./styles.css";
 import { nextHistoryName } from "./domain/history";
 import { MATCH_TYPE_LABELS, scheduleMatches } from "./domain/scheduler";
 import { buildCurrentWeekLabel, formatLocalDate, formatMinutes, parseLocalDate, parseTimeToMinutes } from "./domain/time";
-import type { AppSettings, AppState, Player, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
+import type { AppSettings, AppState, ClubState, Player, RequiredPair, ScheduledMatch, ScheduleHistoryEntry, ScheduleResult } from "./domain/types";
 import { validateSchedule } from "./domain/validation";
 import { createSharePngBlob } from "./shareImage";
-import { createBackup, loadState, restoreBackup, saveState } from "./storage";
+import { createBackup, defaultClub, loadState, restoreBackup, saveState } from "./storage";
 
 type DragPayload =
   | { kind: "participant"; playerId: string; from: "active" | "inactive" }
@@ -14,9 +14,10 @@ type DragPayload =
 let state: AppState = loadState();
 let activeTab: "schedule" | "participants" | "pairs" | "history" = "schedule";
 let rosterOpen = false;
+let clubOpen = false;
 let dataOpen = false;
 let calendarOpen = false;
-let calendarMonth = parseLocalDate(state.currentWeek.weekLabel);
+let calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
 let selectedHistoryId: string | null = null;
 let sharingImage = false;
 let dragPayload: DragPayload | null = null;
@@ -38,14 +39,17 @@ function commit(nextState = state): void {
 }
 
 function render(): void {
+  const club = activeClub();
   app.innerHTML = `
     <main class="app-shell">
       <section class="topbar">
         <div>
           <h1>테니스 대진표</h1>
-          <p>${state.currentWeek.weekLabel} · ${formatMinutes(state.settings.startTime)}-${formatMinutes(state.settings.endTime)} · ${state.settings.courts}코트 · ${state.settings.slotMinutes}분</p>
+          <p>${escapeHtml(club.name)} · ${club.currentWeek.weekLabel} · ${formatMinutes(club.settings.startTime)}-${formatMinutes(club.settings.endTime)} · ${club.settings.courts}코트 · ${club.settings.slotMinutes}분</p>
         </div>
         <div class="topbar__actions">
+          ${renderClubSelect()}
+          <button class="text-button" data-action="open-clubs">클럽 관리</button>
           <button class="text-button" data-action="open-roster">클럽원</button>
           <button class="text-button" data-action="share-image">공유 이미지</button>
           <button class="text-button" data-action="toggle-data">데이터</button>
@@ -56,32 +60,41 @@ function render(): void {
         <div class="date-field">
           <span>날짜</span>
           <div class="date-picker">
-            <button class="date-picker__button" type="button" data-action="toggle-calendar">${escapeHtml(state.currentWeek.weekLabel)}</button>
+            <button class="date-picker__button" type="button" data-action="toggle-calendar">${escapeHtml(activeClub().currentWeek.weekLabel)}</button>
             ${calendarOpen ? renderCalendar() : ""}
           </div>
         </div>
-        <label>시작 ${renderTimeSelect("startTime", state.settings.startTime, "data-field=\"startTime\"")}</label>
-        <label>종료 ${renderTimeSelect("endTime", state.settings.endTime, "data-field=\"endTime\"")}</label>
-        <label>코트 <input data-field="courts" type="number" min="1" max="8" value="${state.settings.courts}" /></label>
-        <label>간격 <input data-field="slotMinutes" type="number" min="10" step="5" value="${state.settings.slotMinutes}" /></label>
+        <label>시작 ${renderTimeSelect("startTime", activeClub().settings.startTime, "data-field=\"startTime\"")}</label>
+        <label>종료 ${renderTimeSelect("endTime", activeClub().settings.endTime, "data-field=\"endTime\"")}</label>
+        <label>코트 <input data-field="courts" type="number" min="1" max="8" value="${activeClub().settings.courts}" /></label>
+        <label>간격 <input data-field="slotMinutes" type="number" min="10" step="5" value="${activeClub().settings.slotMinutes}" /></label>
         <button class="secondary-action" data-action="new-week">새 주차</button>
         <button class="primary-action" data-action="generate">대진 생성</button>
       </section>
 
       ${dataOpen ? renderDataPanel() : ""}
       <nav class="tabs" aria-label="작업 탭">
-        ${renderTabButton("schedule", "대진표", `${state.currentWeek.lastSchedule?.matches.length ?? 0}경기`)}
-        ${renderTabButton("participants", "참가", `${state.currentWeek.participantIds.length}명`)}
-        ${renderTabButton("pairs", "필수페어", `${state.currentWeek.requiredPairs.length}개`)}
-        ${renderTabButton("history", "기록", `${state.scheduleHistory.length}개`)}
+        ${renderTabButton("schedule", "대진표", `${activeClub().currentWeek.lastSchedule?.matches.length ?? 0}경기`)}
+        ${renderTabButton("participants", "참가", `${activeClub().currentWeek.participantIds.length}명`)}
+        ${renderTabButton("pairs", "필수페어", `${activeClub().currentWeek.requiredPairs.length}개`)}
+        ${renderTabButton("history", "기록", `${activeClub().scheduleHistory.length}개`)}
       </nav>
 
       ${renderActiveTab()}
       ${rosterOpen ? renderRosterDrawer() : ""}
+      ${clubOpen ? renderClubDrawer() : ""}
     </main>
   `;
 
   bindEvents();
+}
+
+function renderClubSelect(): string {
+  return `
+    <select class="club-select" data-club-select aria-label="클럽 선택">
+      ${state.clubs.map((club) => `<option value="${club.clubId}" ${club.clubId === state.activeClubId ? "selected" : ""}>${escapeHtml(club.name)}</option>`).join("")}
+    </select>
+  `;
 }
 
 function renderDataPanel(): string {
@@ -105,10 +118,10 @@ function renderActiveTab(): string {
   if (activeTab === "participants") return renderParticipantsPanel();
   if (activeTab === "pairs") return renderPairsPanel();
   if (activeTab === "history") return renderHistoryPanel();
-  const historyEntry = selectedHistoryId ? state.scheduleHistory.find((entry) => entry.historyId === selectedHistoryId) : null;
+  const historyEntry = selectedHistoryId ? activeClub().scheduleHistory.find((entry) => entry.historyId === selectedHistoryId) : null;
   const title = historyEntry ? historyEntry.name : "대진표";
-  const result = historyEntry?.schedule ?? state.currentWeek.lastSchedule;
-  const requiredPairs = historyEntry?.requiredPairs ?? state.currentWeek.requiredPairs;
+  const result = historyEntry?.schedule ?? activeClub().currentWeek.lastSchedule;
+  const requiredPairs = historyEntry?.requiredPairs ?? activeClub().currentWeek.requiredPairs;
   const readonly = Boolean(historyEntry);
   return `
     <section class="panel schedule-panel">
@@ -131,7 +144,7 @@ function renderCalendar(): string {
     const date = new Date(year, month, index + 1);
     const dateLabel = formatLocalDate(date);
     return `
-      <button type="button" class="calendar__day ${dateLabel === state.currentWeek.weekLabel ? "calendar__day--selected" : ""}"
+      <button type="button" class="calendar__day ${dateLabel === activeClub().currentWeek.weekLabel ? "calendar__day--selected" : ""}"
         data-action="select-date"
         data-date="${dateLabel}">${index + 1}</button>
     `;
@@ -156,7 +169,7 @@ function renderParticipantsPanel(): string {
     <section class="panel">
       <div class="panel__header">
         <h2>이번주 참가</h2>
-        <span>${state.currentWeek.participantIds.length}명</span>
+        <span>${activeClub().currentWeek.participantIds.length}명</span>
       </div>
       <div class="columns">
         <div class="drop-zone" data-participant-zone="active">
@@ -189,7 +202,7 @@ function renderPairsPanel(): string {
 }
 
 function renderHistoryPanel(): string {
-  const entries = [...state.scheduleHistory].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const entries = [...activeClub().scheduleHistory].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return `
     <section class="panel">
       <div class="panel__header">
@@ -232,17 +245,46 @@ function renderRosterDrawer(): string {
         </div>
       </div>
       <div class="roster-list">
-        ${state.roster.map(renderRosterRow).join("")}
+        ${activeClub().roster.map(renderRosterRow).join("")}
       </div>
     </aside>
+  `;
+}
+
+function renderClubDrawer(): string {
+  return `
+    <div class="drawer-backdrop" data-action="close-clubs"></div>
+    <aside class="roster-drawer" aria-label="클럽 관리">
+      <div class="panel__header">
+        <h2>클럽 관리</h2>
+        <div class="drawer-actions">
+          <button data-action="add-club">추가</button>
+          <button class="icon-button icon-button--small" data-action="close-clubs">×</button>
+        </div>
+      </div>
+      <div class="club-list">
+        ${state.clubs.map(renderClubRow).join("")}
+      </div>
+    </aside>
+  `;
+}
+
+function renderClubRow(club: ClubState): string {
+  return `
+    <form class="club-row ${club.clubId === state.activeClubId ? "club-row--active" : ""}" data-club-form="${club.clubId}">
+      <input name="name" value="${escapeHtml(club.name)}" aria-label="클럽 이름" />
+      <button type="button" data-action="switch-club" data-club-id="${club.clubId}">선택</button>
+      <button type="button" data-action="delete-club" data-club-id="${club.clubId}" ${state.clubs.length <= 1 ? "disabled" : ""}>삭제</button>
+      <span>${club.roster.length}명 · ${club.scheduleHistory.length}기록</span>
+    </form>
   `;
 }
 
 function renderRequiredPairs(): string {
   const activePlayers = participants(true);
   if (activePlayers.length < 2) return `<p class="helper">참가자가 2명 이상일 때 설정할 수 있습니다.</p>`;
-  if (state.currentWeek.requiredPairs.length === 0) return `<p class="helper">필요한 페어가 있으면 추가하세요.</p>`;
-  return state.currentWeek.requiredPairs
+  if (activeClub().currentWeek.requiredPairs.length === 0) return `<p class="helper">필요한 페어가 있으면 추가하세요.</p>`;
+  return activeClub().currentWeek.requiredPairs
     .map(
       (pair, index) => `
         <div class="pair-row" data-pair-index="${index}">
@@ -410,14 +452,14 @@ function bindEvents(): void {
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((input) => {
     input.addEventListener("change", () => {
       if (input.dataset.field === "courts") {
-        state.settings.courts = Math.max(1, Number(input.value) || 1);
-        state.currentWeek.lastSchedule = null;
-        state.currentWeek.activeHistoryId = null;
+        activeClub().settings.courts = Math.max(1, Number(input.value) || 1);
+        activeClub().currentWeek.lastSchedule = null;
+        activeClub().currentWeek.activeHistoryId = null;
       }
       if (input.dataset.field === "slotMinutes") {
-        state.settings.slotMinutes = Math.max(5, Number(input.value) || 30);
-        state.currentWeek.lastSchedule = null;
-        state.currentWeek.activeHistoryId = null;
+        activeClub().settings.slotMinutes = Math.max(5, Number(input.value) || 30);
+        activeClub().currentWeek.lastSchedule = null;
+        activeClub().currentWeek.activeHistoryId = null;
       }
       if (input.dataset.field === "startTime") updateSettingsTime("startTime", String(input.value));
       if (input.dataset.field === "endTime") updateSettingsTime("endTime", String(input.value));
@@ -437,6 +479,12 @@ function bindEvents(): void {
   app.querySelectorAll<HTMLInputElement>("[data-history-name]").forEach((input) => {
     input.addEventListener("change", () => renameHistoryEntry(input));
   });
+  app.querySelector<HTMLSelectElement>("[data-club-select]")?.addEventListener("change", (event) => {
+    switchClub((event.target as HTMLSelectElement).value);
+  });
+  app.querySelectorAll<HTMLFormElement>("[data-club-form]").forEach((form) => {
+    form.addEventListener("change", () => updateClubFromForm(form));
+  });
 
   app.querySelectorAll<HTMLElement>("[data-draggable]").forEach((element) => {
     element.addEventListener("pointerdown", startDrag);
@@ -453,6 +501,11 @@ function handleClick(event: Event): void {
   if (!actionTarget) return;
   const action = actionTarget.dataset.action;
   if (action === "switch-tab") switchTab(actionTarget.dataset.tab);
+  if (action === "open-clubs") openClubs();
+  if (action === "close-clubs") closeClubs();
+  if (action === "add-club") addClub();
+  if (action === "switch-club") switchClub(actionTarget.dataset.clubId ?? "");
+  if (action === "delete-club") deleteClub(actionTarget.dataset.clubId ?? "");
   if (action === "open-roster") openRoster();
   if (action === "close-roster") closeRoster();
   if (action === "toggle-data") toggleDataPanel();
@@ -481,6 +534,16 @@ function switchTab(tab: string | undefined): void {
   }
 }
 
+function openClubs(): void {
+  clubOpen = true;
+  render();
+}
+
+function closeClubs(): void {
+  clubOpen = false;
+  render();
+}
+
 function openRoster(): void {
   rosterOpen = true;
   render();
@@ -491,6 +554,42 @@ function closeRoster(): void {
   render();
 }
 
+function addClub(): void {
+  const club = defaultClub(createClubId(), `새 클럽 ${state.clubs.length + 1}`);
+  state.clubs.push(club);
+  switchClub(club.clubId);
+}
+
+function switchClub(clubId: string): void {
+  if (!state.clubs.some((club) => club.clubId === clubId)) return;
+  state.activeClubId = clubId;
+  selectedHistoryId = null;
+  calendarOpen = false;
+  calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
+  commit();
+}
+
+function deleteClub(clubId: string): void {
+  if (state.clubs.length <= 1) return;
+  const index = state.clubs.findIndex((club) => club.clubId === clubId);
+  if (index < 0) return;
+  state.clubs.splice(index, 1);
+  if (state.activeClubId === clubId) {
+    state.activeClubId = state.clubs[Math.max(0, index - 1)].clubId;
+    selectedHistoryId = null;
+    calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
+  }
+  commit();
+}
+
+function updateClubFromForm(form: HTMLFormElement): void {
+  const club = state.clubs.find((item) => item.clubId === form.dataset.clubForm);
+  if (!club) return;
+  const data = new FormData(form);
+  club.name = String(data.get("name") || club.name).trim() || club.name;
+  commit();
+}
+
 function toggleDataPanel(): void {
   dataOpen = !dataOpen;
   render();
@@ -498,7 +597,7 @@ function toggleDataPanel(): void {
 
 function toggleCalendar(): void {
   calendarOpen = !calendarOpen;
-  calendarMonth = parseLocalDate(state.currentWeek.weekLabel);
+  calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
   render();
 }
 
@@ -513,9 +612,9 @@ function selectDate(dateLabel: string): void {
   } catch {
     return;
   }
-  state.currentWeek.weekLabel = dateLabel;
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.weekLabel = dateLabel;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   selectedHistoryId = null;
   calendarOpen = false;
   commit();
@@ -590,85 +689,85 @@ function moveGhost(clientX: number, clientY: number): void {
 
 function updatePlayerFromForm(form: HTMLFormElement): void {
   const id = form.dataset.playerForm;
-  const player = state.roster.find((item) => item.playerId === id);
+  const player = activeClub().roster.find((item) => item.playerId === id);
   if (!player) return;
   const data = new FormData(form);
   player.name = String(data.get("name") || player.name).trim() || player.name;
   player.gender = String(data.get("gender")) === "F" ? "F" : "M";
   player.canFillMaleSlot = data.get("fill") === "on";
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function updateSettingsTime(field: "startTime" | "endTime", value: string): void {
   const minutes = parseTimeToMinutes(value);
-  state.settings[field] = minutes;
-  for (const playerId of state.currentWeek.participantIds) {
-    const player = state.roster.find((item) => item.playerId === playerId);
+  activeClub().settings[field] = minutes;
+  for (const playerId of activeClub().currentWeek.participantIds) {
+    const player = activeClub().roster.find((item) => item.playerId === playerId);
     if (!player) continue;
     if (field === "startTime") player.availableStart = minutes;
     if (field === "endTime") player.availableEnd = minutes;
   }
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
 }
 
 function updateParticipantTime(input: HTMLInputElement | HTMLSelectElement): void {
-  const player = state.roster.find((item) => item.playerId === input.dataset.playerTime);
+  const player = activeClub().roster.find((item) => item.playerId === input.dataset.playerTime);
   if (!player) return;
   const minutes = parseTimeToMinutes(input.value);
   if (input.dataset.timeField === "start") player.availableStart = minutes;
   if (input.dataset.timeField === "end") player.availableEnd = minutes;
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function addPlayer(): void {
-  const nextNumber = state.roster.length + 1;
+  const nextNumber = activeClub().roster.length + 1;
   const player: Player = {
     playerId: `p${Date.now()}`,
     name: `새 회원 ${nextNumber}`,
     gender: "M",
-    availableStart: state.settings.startTime,
-    availableEnd: state.settings.endTime,
+    availableStart: activeClub().settings.startTime,
+    availableEnd: activeClub().settings.endTime,
     canFillMaleSlot: false,
     showLateJoin: false,
     showEarlyLeave: false,
   };
-  state.roster.push(player);
-  state.currentWeek.participantIds.push(player.playerId);
+  activeClub().roster.push(player);
+  activeClub().currentWeek.participantIds.push(player.playerId);
   commit();
 }
 
 function deletePlayer(playerId: string): void {
-  state.roster = state.roster.filter((player) => player.playerId !== playerId);
-  state.currentWeek.participantIds = state.currentWeek.participantIds.filter((id) => id !== playerId);
-  state.currentWeek.requiredPairs = state.currentWeek.requiredPairs.filter((pair) => pair.player1Id !== playerId && pair.player2Id !== playerId);
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().roster = activeClub().roster.filter((player) => player.playerId !== playerId);
+  activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
+  activeClub().currentWeek.requiredPairs = activeClub().currentWeek.requiredPairs.filter((pair) => pair.player1Id !== playerId && pair.player2Id !== playerId);
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function addParticipant(playerId: string): void {
-  if (!state.currentWeek.participantIds.includes(playerId)) {
-    const player = state.roster.find((item) => item.playerId === playerId);
+  if (!activeClub().currentWeek.participantIds.includes(playerId)) {
+    const player = activeClub().roster.find((item) => item.playerId === playerId);
     if (player) {
-      player.availableStart = state.settings.startTime;
-      player.availableEnd = state.settings.endTime;
+      player.availableStart = activeClub().settings.startTime;
+      player.availableEnd = activeClub().settings.endTime;
     }
-    state.currentWeek.participantIds.push(playerId);
-    state.currentWeek.lastSchedule = null;
-    state.currentWeek.activeHistoryId = null;
+    activeClub().currentWeek.participantIds.push(playerId);
+    activeClub().currentWeek.lastSchedule = null;
+    activeClub().currentWeek.activeHistoryId = null;
     commit();
   }
 }
 
 function removeParticipant(playerId: string): void {
-  state.currentWeek.participantIds = state.currentWeek.participantIds.filter((id) => id !== playerId);
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
@@ -678,7 +777,7 @@ function generateSchedule(): void {
     alert("최소 4명의 참가자가 필요합니다.");
     return;
   }
-  if (state.settings.endTime <= state.settings.startTime) {
+  if (activeClub().settings.endTime <= activeClub().settings.startTime) {
     alert("전체 끝 시간이 시작보다 늦어야 합니다.");
     return;
   }
@@ -689,26 +788,26 @@ function generateSchedule(): void {
     render();
     return;
   }
-  const schedule = scheduleMatches(players, state.currentWeek.requiredPairs, state.settings.slotMinutes, state.settings.courts);
+  const schedule = scheduleMatches(players, activeClub().currentWeek.requiredPairs, activeClub().settings.slotMinutes, activeClub().settings.courts);
   const historyEntry = createHistoryEntry(schedule);
-  state.currentWeek.lastSchedule = schedule;
-  state.currentWeek.activeHistoryId = historyEntry.historyId;
-  state.scheduleHistory.push(historyEntry);
+  activeClub().currentWeek.lastSchedule = schedule;
+  activeClub().currentWeek.activeHistoryId = historyEntry.historyId;
+  activeClub().scheduleHistory.push(historyEntry);
   selectedHistoryId = null;
   activeTab = "schedule";
   commit();
 }
 
 function newWeek(): void {
-  for (const playerId of state.currentWeek.participantIds) {
-    const player = state.roster.find((item) => item.playerId === playerId);
+  for (const playerId of activeClub().currentWeek.participantIds) {
+    const player = activeClub().roster.find((item) => item.playerId === playerId);
     if (!player) continue;
-    player.availableStart = state.settings.startTime;
-    player.availableEnd = state.settings.endTime;
+    player.availableStart = activeClub().settings.startTime;
+    player.availableEnd = activeClub().settings.endTime;
   }
-  state.currentWeek = {
+  activeClub().currentWeek = {
     weekLabel: buildCurrentWeekLabel(),
-    participantIds: [...state.currentWeek.participantIds],
+    participantIds: [...activeClub().currentWeek.participantIds],
     requiredPairs: [],
     lastSchedule: null,
     activeHistoryId: null,
@@ -720,22 +819,22 @@ function newWeek(): void {
 function addPair(): void {
   const players = participants(true);
   if (players.length < 2) return;
-  state.currentWeek.requiredPairs.push({ player1Id: players[0].playerId, player2Id: players[1].playerId });
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.requiredPairs.push({ player1Id: players[0].playerId, player2Id: players[1].playerId });
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function deletePair(index: number): void {
-  state.currentWeek.requiredPairs.splice(index, 1);
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.requiredPairs.splice(index, 1);
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function updatePairFromRow(row: HTMLElement): void {
   const index = Number(row.dataset.pairIndex);
-  const pair = state.currentWeek.requiredPairs[index];
+  const pair = activeClub().currentWeek.requiredPairs[index];
   if (!pair) return;
   const selects = row.querySelectorAll<HTMLSelectElement>("select");
   pair.player1Id = selects[0]?.value ?? pair.player1Id;
@@ -744,13 +843,13 @@ function updatePairFromRow(row: HTMLElement): void {
     const fallback = participants(true).find((player) => player.playerId !== pair.player1Id);
     if (fallback) pair.player2Id = fallback.playerId;
   }
-  state.currentWeek.lastSchedule = null;
-  state.currentWeek.activeHistoryId = null;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
   commit();
 }
 
 function swapSchedulePlayers(source: Extract<DragPayload, { kind: "schedule" }>, target: Extract<DragPayload, { kind: "schedule" }>): void {
-  const schedule = state.currentWeek.lastSchedule;
+  const schedule = activeClub().currentWeek.lastSchedule;
   if (!schedule) return;
   const sourceMatch = schedule.matches[source.matchIndex];
   const targetMatch = schedule.matches[target.matchIndex];
@@ -758,36 +857,36 @@ function swapSchedulePlayers(source: Extract<DragPayload, { kind: "schedule" }>,
   const sourcePlayer = sourceMatch[source.side][source.position];
   sourceMatch[source.side][source.position] = targetMatch[target.side][target.position];
   targetMatch[target.side][target.position] = sourcePlayer;
-  const validation = validateSchedule(schedule.matches, schedule.players, state.currentWeek.requiredPairs);
-  state.currentWeek.lastSchedule = validation.summary;
+  const validation = validateSchedule(schedule.matches, schedule.players, activeClub().currentWeek.requiredPairs);
+  activeClub().currentWeek.lastSchedule = validation.summary;
   syncActiveHistory(validation.summary);
   commit();
 }
 
 function createHistoryEntry(schedule: ScheduleResult): ScheduleHistoryEntry {
-  const dateLabel = state.currentWeek.weekLabel;
+  const dateLabel = activeClub().currentWeek.weekLabel;
   return {
     historyId: createHistoryId(),
-    name: nextHistoryName(dateLabel, state.scheduleHistory),
+    name: nextHistoryName(dateLabel, activeClub().scheduleHistory),
     dateLabel,
     createdAt: new Date().toISOString(),
-    settings: cloneSettings(state.settings),
-    participantIds: [...state.currentWeek.participantIds],
-    requiredPairs: cloneRequiredPairs(state.currentWeek.requiredPairs),
+    settings: cloneSettings(activeClub().settings),
+    participantIds: [...activeClub().currentWeek.participantIds],
+    requiredPairs: cloneRequiredPairs(activeClub().currentWeek.requiredPairs),
     schedule: cloneScheduleResult(schedule),
   };
 }
 
 function syncActiveHistory(schedule: ScheduleResult): void {
-  const historyId = state.currentWeek.activeHistoryId;
+  const historyId = activeClub().currentWeek.activeHistoryId;
   if (!historyId) return;
-  const entry = state.scheduleHistory.find((item) => item.historyId === historyId);
+  const entry = activeClub().scheduleHistory.find((item) => item.historyId === historyId);
   if (!entry) return;
   entry.schedule = cloneScheduleResult(schedule);
 }
 
 function renameHistoryEntry(input: HTMLInputElement): void {
-  const entry = state.scheduleHistory.find((item) => item.historyId === input.dataset.historyName);
+  const entry = activeClub().scheduleHistory.find((item) => item.historyId === input.dataset.historyName);
   if (!entry) return;
   const nextName = input.value.trim();
   if (!nextName) {
@@ -799,20 +898,20 @@ function renameHistoryEntry(input: HTMLInputElement): void {
 }
 
 function viewHistory(historyId: string): void {
-  if (!state.scheduleHistory.some((entry) => entry.historyId === historyId)) return;
+  if (!activeClub().scheduleHistory.some((entry) => entry.historyId === historyId)) return;
   selectedHistoryId = historyId;
   activeTab = "schedule";
   render();
 }
 
 function deleteHistory(historyId: string): void {
-  state.scheduleHistory = state.scheduleHistory.filter((entry) => entry.historyId !== historyId);
+  activeClub().scheduleHistory = activeClub().scheduleHistory.filter((entry) => entry.historyId !== historyId);
   if (selectedHistoryId === historyId) {
     selectedHistoryId = null;
     activeTab = "history";
   }
-  if (state.currentWeek.activeHistoryId === historyId) {
-    state.currentWeek.activeHistoryId = null;
+  if (activeClub().currentWeek.activeHistoryId === historyId) {
+    activeClub().currentWeek.activeHistoryId = null;
   }
   commit();
 }
@@ -822,23 +921,23 @@ function exportBackup(): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `tennis-draw-${state.currentWeek.weekLabel}.json`;
+  link.download = `tennis-draw-${activeClub().currentWeek.weekLabel}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
 
 async function shareImage(): Promise<void> {
   if (sharingImage) return;
-  const historyEntry = selectedHistoryId ? state.scheduleHistory.find((entry) => entry.historyId === selectedHistoryId) : null;
-  const result = historyEntry?.schedule ?? state.currentWeek.lastSchedule;
+  const historyEntry = selectedHistoryId ? activeClub().scheduleHistory.find((entry) => entry.historyId === selectedHistoryId) : null;
+  const result = historyEntry?.schedule ?? activeClub().currentWeek.lastSchedule;
   if (!result) {
     alert("먼저 대진표를 생성하세요.");
     return;
   }
   sharingImage = true;
   try {
-    const title = historyEntry ? historyEntry.name : `테니스 대진표 ${state.currentWeek.weekLabel}`;
-    const filenameLabel = historyEntry?.dateLabel ?? state.currentWeek.weekLabel;
+    const title = historyEntry ? historyEntry.name : `테니스 대진표 ${activeClub().currentWeek.weekLabel}`;
+    const filenameLabel = historyEntry?.dateLabel ?? activeClub().currentWeek.weekLabel;
     const blob = await createSharePngBlob(result, title);
     const file = new File([blob], `tennis-draw-${filenameLabel}.png`, { type: "image/png" });
     const navigatorWithShare = navigator as Navigator & {
@@ -867,7 +966,7 @@ function handleImport(event: Event): void {
     .then((text) => {
       state = restoreBackup(text);
       selectedHistoryId = null;
-      calendarMonth = parseLocalDate(state.currentWeek.weekLabel);
+      calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
       commit();
     })
     .catch((error) => {
@@ -885,12 +984,16 @@ function downloadBlob(blob: Blob, filename: string): void {
 }
 
 function participants(active: boolean): Player[] {
-  const activeIds = new Set(state.currentWeek.participantIds);
-  const rosterById = new Map(state.roster.map((player) => [player.playerId, player]));
+  const activeIds = new Set(activeClub().currentWeek.participantIds);
+  const rosterById = new Map(activeClub().roster.map((player) => [player.playerId, player]));
   if (active) {
-    return state.currentWeek.participantIds.map((id) => rosterById.get(id)).filter((player): player is Player => Boolean(player));
+    return activeClub().currentWeek.participantIds.map((id) => rosterById.get(id)).filter((player): player is Player => Boolean(player));
   }
-  return state.roster.filter((player) => !activeIds.has(player.playerId));
+  return activeClub().roster.filter((player) => !activeIds.has(player.playerId));
+}
+
+function activeClub(): ClubState {
+  return state.clubs.find((club) => club.clubId === state.activeClubId) ?? state.clubs[0];
 }
 
 function cloneSettings(settings: AppSettings): AppSettings {
@@ -907,6 +1010,10 @@ function cloneScheduleResult(schedule: ScheduleResult): ScheduleResult {
 
 function createHistoryId(): string {
   return crypto.randomUUID?.() ?? `h${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createClubId(): string {
+  return crypto.randomUUID?.() ?? `club-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function groupMatches(matches: ScheduledMatch[]): Array<[number, ScheduledMatch[]]> {

@@ -13,9 +13,10 @@ npm install
 npm run dev
 ```
 
-The web app stores roster, weekly participants, settings, and the latest schedule
-in browser `localStorage`. Data persists on the same device, browser, and GitHub
-Pages URL. Use the JSON export/import controls to move data to another device.
+The web app stores clubs, rosters, weekly participants, settings, and schedule
+history in browser `localStorage`. Data persists on the same device, browser,
+and GitHub Pages URL. Use the JSON export/import controls to move data to
+another device.
 
 ## Python Reference
 

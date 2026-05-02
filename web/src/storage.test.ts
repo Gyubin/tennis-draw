@@ -1,37 +1,49 @@
 import { describe, expect, it } from "vitest";
 import { scheduleMatches } from "./domain/scheduler";
-import { createBackup, defaultState, loadState, restoreBackup, saveState } from "./storage";
+import type { AppStateV1 } from "./domain/types";
+import { createBackup, defaultClub, defaultState, loadState, restoreBackup, saveState } from "./storage";
 
 describe("storage", () => {
-  it("returns defaults when storage is empty", () => {
+  it("returns v2 defaults when storage is empty", () => {
     const storage = memoryStorage();
-    expect(loadState(storage).schemaVersion).toBe(1);
-    expect(loadState(storage).roster.length).toBeGreaterThan(0);
+    const state = loadState(storage);
+
+    expect(state.schemaVersion).toBe(2);
+    expect(state.clubs).toHaveLength(1);
+    expect(state.clubs[0].name).toBe("기본 클럽");
+    expect(state.clubs[0].roster.length).toBeGreaterThan(0);
+    expect(state.activeClubId).toBe(state.clubs[0].clubId);
   });
 
-  it("saves and restores state", () => {
+  it("saves and restores v2 state", () => {
     const storage = memoryStorage();
     const state = defaultState();
-    state.roster[0].name = "Changed";
+    state.clubs[0].roster[0].name = "Changed";
 
     saveState(state, storage);
 
-    expect(loadState(storage).roster[0].name).toBe("Changed");
-    expect(storage.getItem("tennis-draw:v1")).not.toBeNull();
+    const restored = loadState(storage);
+    expect(restored.clubs[0].roster[0].name).toBe("Changed");
+    expect(storage.getItem("tennis-draw:v2")).not.toBeNull();
   });
 
-  it("loads legacy simple tennis matcher data", () => {
+  it("migrates legacy simple tennis matcher data into a default club", () => {
     const storage = memoryStorage();
-    const state = defaultState();
-    state.roster[0].name = "Legacy";
-    storage.setItem("simple-tennis-matcher:v1", JSON.stringify(state));
+    const legacy = legacyState();
+    legacy.roster[0].name = "Legacy";
+    storage.setItem("simple-tennis-matcher:v1", JSON.stringify(legacy));
 
-    expect(loadState(storage).roster[0].name).toBe("Legacy");
+    const restored = loadState(storage);
+
+    expect(restored.schemaVersion).toBe(2);
+    expect(restored.clubs).toHaveLength(1);
+    expect(restored.clubs[0].name).toBe("기본 클럽");
+    expect(restored.clubs[0].roster[0].name).toBe("Legacy");
   });
 
-  it("adds default operating times to older saved state", () => {
+  it("adds default operating times to older saved state during migration", () => {
     const storage = memoryStorage();
-    const state = defaultState();
+    const state = legacyState();
     const legacy = {
       ...state,
       settings: {
@@ -41,15 +53,15 @@ describe("storage", () => {
     };
     storage.setItem("tennis-draw:v1", JSON.stringify(legacy));
 
-    const restored = loadState(storage);
+    const restored = loadState(storage).clubs[0];
 
     expect(restored.settings.startTime).toBe(18 * 60);
     expect(restored.settings.endTime).toBe(20 * 60);
   });
 
-  it("adds history defaults to older saved state", () => {
+  it("adds history defaults to older saved state during migration", () => {
     const storage = memoryStorage();
-    const state = defaultState();
+    const state = legacyState();
     const legacy = {
       ...state,
       currentWeek: {
@@ -61,7 +73,7 @@ describe("storage", () => {
     };
     storage.setItem("tennis-draw:v1", JSON.stringify(legacy));
 
-    const restored = loadState(storage);
+    const restored = loadState(storage).clubs[0];
 
     expect(restored.scheduleHistory).toEqual([]);
     expect(restored.currentWeek.activeHistoryId).toBeNull();
@@ -70,57 +82,84 @@ describe("storage", () => {
   it("replaces invalid saved dates with a valid date label", () => {
     const storage = memoryStorage();
     const state = defaultState();
-    storage.setItem(
-      "tennis-draw:v1",
-      JSON.stringify({
-        ...state,
-        currentWeek: {
-          ...state.currentWeek,
-          weekLabel: "2026-02-30",
-        },
-      }),
-    );
+    state.clubs[0].currentWeek.weekLabel = "2026-02-30";
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
 
-    expect(loadState(storage).currentWeek.weekLabel).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(loadState(storage).clubs[0].currentWeek.weekLabel).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it("falls back to defaults on corrupt JSON", () => {
     const storage = memoryStorage();
-    storage.setItem("tennis-draw:v1", "{");
+    storage.setItem("tennis-draw:v2", "{");
 
-    expect(loadState(storage).schemaVersion).toBe(1);
+    expect(loadState(storage).schemaVersion).toBe(2);
   });
 
   it("round trips JSON backup", () => {
     const state = defaultState();
-    state.currentWeek.participantIds = ["m1"];
+    state.clubs[0].currentWeek.participantIds = ["m1"];
     const restored = restoreBackup(JSON.stringify(createBackup(state)));
 
-    expect(restored.currentWeek.participantIds).toEqual(["m1"]);
+    expect(restored.clubs[0].currentWeek.participantIds).toEqual(["m1"]);
+  });
+
+  it("restores v1 JSON backup by migrating it into a default club", () => {
+    const state = legacyState();
+    state.currentWeek.participantIds = ["m1"];
+    const restored = restoreBackup(JSON.stringify({ schemaVersion: 1, exportedAt: "2026-05-03T00:00:00.000Z", state }));
+
+    expect(restored.schemaVersion).toBe(2);
+    expect(restored.clubs[0].currentWeek.participantIds).toEqual(["m1"]);
   });
 
   it("round trips schedule history in JSON backup", () => {
     const state = defaultState();
-    const schedule = scheduleMatches(state.roster, [], state.settings.slotMinutes, state.settings.courts);
-    state.scheduleHistory.push({
+    const club = state.clubs[0];
+    const schedule = scheduleMatches(club.roster, [], club.settings.slotMinutes, club.settings.courts);
+    club.scheduleHistory.push({
       historyId: "h1",
       name: "2026-05-09 (1)",
       dateLabel: "2026-05-09",
       createdAt: "2026-05-03T00:00:00.000Z",
-      settings: { ...state.settings },
-      participantIds: [...state.currentWeek.participantIds],
+      settings: { ...club.settings },
+      participantIds: [...club.currentWeek.participantIds],
       requiredPairs: [],
       schedule,
     });
-    state.currentWeek.activeHistoryId = "h1";
+    club.currentWeek.activeHistoryId = "h1";
 
     const restored = restoreBackup(JSON.stringify(createBackup(state)));
 
-    expect(restored.scheduleHistory).toHaveLength(1);
-    expect(restored.scheduleHistory[0].name).toBe("2026-05-09 (1)");
-    expect(restored.currentWeek.activeHistoryId).toBe("h1");
+    expect(restored.clubs[0].scheduleHistory).toHaveLength(1);
+    expect(restored.clubs[0].scheduleHistory[0].name).toBe("2026-05-09 (1)");
+    expect(restored.clubs[0].currentWeek.activeHistoryId).toBe("h1");
+  });
+
+  it("preserves multiple clubs and repairs an invalid active club id", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    state.clubs.push(defaultClub("club-2", "두번째 클럽"));
+    state.activeClubId = "missing";
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs.map((club) => club.name)).toEqual(["기본 클럽", "두번째 클럽"]);
+    expect(restored.activeClubId).toBe(restored.clubs[0].clubId);
   });
 });
+
+function legacyState(): AppStateV1 {
+  const state = defaultState();
+  const club = state.clubs[0];
+  return {
+    schemaVersion: 1,
+    roster: club.roster,
+    settings: club.settings,
+    currentWeek: club.currentWeek,
+    scheduleHistory: club.scheduleHistory,
+  };
+}
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();

@@ -76,7 +76,16 @@ export interface ScheduleHistoryEntry {
   schedule: ScheduleResult;
 }
 
-export interface AppState {
+export interface ClubState {
+  clubId: string;
+  name: string;
+  roster: Player[];
+  settings: AppSettings;
+  currentWeek: WeekState;
+  scheduleHistory: ScheduleHistoryEntry[];
+}
+
+export interface AppStateV1 {
   schemaVersion: 1;
   roster: Player[];
   settings: AppSettings;
@@ -84,8 +93,20 @@ export interface AppState {
   scheduleHistory: ScheduleHistoryEntry[];
 }
 
+export interface AppState {
+  schemaVersion: 2;
+  activeClubId: string;
+  clubs: ClubState[];
+}
+
+export interface BackupV2 {
+  schemaVersion: 2;
+  exportedAt: string;
+  state: AppState;
+}
+
 export interface BackupV1 {
   schemaVersion: 1;
   exportedAt: string;
-  state: AppState;
+  state: AppStateV1;
 }
