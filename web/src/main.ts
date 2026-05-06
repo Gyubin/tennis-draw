@@ -791,6 +791,9 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
   let active = false;
   let cancelled = false;
   const pointerId = event.pointerId;
+  const blockActiveTouchScroll = (touchEvent: TouchEvent) => {
+    if (active) touchEvent.preventDefault();
+  };
   element.classList.add("player-chip--drag-pressing");
   const timer = window.setTimeout(() => {
     if (cancelled) return;
@@ -804,6 +807,7 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
     document.removeEventListener("pointercancel", onCancel);
+    document.removeEventListener("touchmove", blockActiveTouchScroll, { capture: true });
   };
   const cancel = () => {
     cancelled = true;
@@ -844,6 +848,7 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
   document.addEventListener("pointermove", onMove);
   document.addEventListener("pointerup", onUp);
   document.addEventListener("pointercancel", onCancel);
+  document.addEventListener("touchmove", blockActiveTouchScroll, { passive: false, capture: true });
 }
 
 function beginScheduleDrag(element: HTMLElement, pointerId: number, clientX: number, clientY: number): void {
