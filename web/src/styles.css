@@ -95,6 +95,26 @@ button:active {
   white-space: nowrap;
 }
 
+.help-button {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #51614b;
+  font-size: 20px;
+  line-height: 1;
+  flex: none;
+  box-shadow: none;
+}
+
+.help-button:hover {
+  border-color: #c8d3c0;
+  background: #f4f8ef;
+}
+
 .club-select {
   min-height: 36px;
   max-width: 180px;
@@ -1053,6 +1073,284 @@ button:active {
   align-items: center;
 }
 
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgb(0 0 0 / 34%);
+}
+
+.help-page {
+  position: fixed;
+  inset: 24px;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  width: min(820px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid #cbd6c3;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 54px rgb(22 31 20 / 24%);
+}
+
+.help-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e4ebde;
+  background: #f7faf4;
+}
+
+.help-page__header h2 {
+  margin: 0;
+  color: #172019;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.help-page__header p {
+  margin: 6px 0 0;
+  color: #5f6d58;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.help-page__content {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 18px 20px 22px;
+}
+
+.help-flow {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.help-step {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 116px;
+  align-content: center;
+  justify-items: center;
+  padding: 12px 8px;
+  border: 1px solid #dce6d6;
+  border-radius: 8px;
+  background: #fbfcf8;
+  text-align: center;
+}
+
+.help-step::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: -12px;
+  width: 15px;
+  height: 2px;
+  background: #b9c8af;
+}
+
+.help-step:last-child::after {
+  display: none;
+}
+
+.help-step span {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #244d25;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.help-step strong {
+  min-width: 0;
+  color: #172019;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.help-step small {
+  color: #61705a;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.help-section {
+  padding: 14px;
+  border: 1px solid #dce6d6;
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.help-section--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.56fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.help-section--compact {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.help-section--compact .help-actions {
+  flex: 1;
+}
+
+.help-page__content h3 {
+  margin: 0 0 10px;
+  color: #263b22;
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.help-section__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.help-section__title h3 {
+  margin: 0;
+}
+
+.help-section__title span {
+  color: #61705a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.help-actions span,
+.help-tips span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #c9d5c1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #31412d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.help-note {
+  display: grid;
+  gap: 7px;
+  align-content: center;
+  padding: 12px;
+  border: 1px dashed #b8c7ae;
+  border-radius: 8px;
+  background: #f4f9ef;
+}
+
+.help-note strong {
+  color: #20361c;
+  font-size: 15px;
+}
+
+.help-note span {
+  color: #52624c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.help-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.help-demo__court {
+  overflow: hidden;
+  border: 1px solid #d6e0d0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.help-demo__court strong {
+  display: block;
+  padding: 7px 10px;
+  background: #edf4e7;
+  color: #344130;
+  font-size: 12px;
+}
+
+.help-demo__teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto 1fr 1fr;
+  gap: 4px;
+  padding: 8px;
+  align-items: center;
+}
+
+.help-demo__teams span {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  padding: 0 4px;
+  border: 1px solid #9db58f;
+  border-radius: 6px;
+  background: #f0f7eb;
+  color: #253322;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.help-demo__teams b,
+.help-demo__move {
+  color: #65745f;
+  font-size: 12px;
+  text-align: center;
+}
+
+.help-demo__empty {
+  border-style: dashed !important;
+  background: #f7faf4 !important;
+  color: #7a8574 !important;
+}
+
+.help-demo__move {
+  font-size: 22px;
+  font-weight: 850;
+}
+
+.help-tips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.help-tips span {
+  min-height: 30px;
+  background: #f7faf4;
+  font-size: 12px;
+}
+
 .drag-ghost {
   position: fixed;
   z-index: 9999;
@@ -1166,6 +1464,7 @@ select,
   }
 
   .topbar {
+    position: relative;
     flex-direction: column;
     gap: 12px;
     padding-top: 6px;
@@ -1173,6 +1472,10 @@ select,
 
   .topbar p {
     font-size: 14px;
+  }
+
+  .topbar h1 {
+    padding-right: 38px;
   }
 
   .topbar__actions {
@@ -1186,6 +1489,16 @@ select,
     min-width: 0;
     padding: 0 6px;
     font-size: 13px;
+  }
+
+  .help-button {
+    position: absolute;
+    top: 3px;
+    right: 0;
+    width: 32px;
+    height: 32px;
+    min-height: 32px;
+    font-size: 20px;
   }
 
   .club-select {
@@ -1377,5 +1690,70 @@ select,
     grid-template-columns: 1fr;
     gap: 3px;
     padding: 8px;
+  }
+
+  .help-page {
+    inset: 10px;
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  .help-page__header {
+    padding: 14px;
+  }
+
+  .help-page__header h2 {
+    font-size: 22px;
+  }
+
+  .help-page__content {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .help-flow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+
+  .help-step {
+    min-height: 96px;
+    padding: 10px 6px;
+  }
+
+  .help-step::after {
+    display: none;
+  }
+
+  .help-step span {
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+  }
+
+  .help-step strong {
+    font-size: 13px;
+  }
+
+  .help-section {
+    padding: 12px;
+  }
+
+  .help-section--split,
+  .help-demo {
+    grid-template-columns: 1fr;
+  }
+
+  .help-section--compact {
+    display: grid;
+  }
+
+  .help-demo__move {
+    transform: rotate(90deg);
+  }
+
+  .help-actions span,
+  .help-tips span {
+    font-size: 12px;
   }
 }

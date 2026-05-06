@@ -23,6 +23,7 @@ let rosterOpen = false;
 let clubOpen = false;
 let dataOpen = false;
 let calendarOpen = false;
+let helpOpen = false;
 let calendarMonth = parseLocalDate(activeClub().currentWeek.weekLabel);
 let selectedHistoryId: string | null = null;
 let sharingImage = false;
@@ -45,6 +46,7 @@ const DRAG_MOVE_THRESHOLD_PX = 5;
 const TOUCH_SCROLL_THRESHOLD_PX = 12;
 
 render();
+document.addEventListener("keydown", handleDocumentKeydown);
 
 function commit(nextState = state): void {
   state = nextState;
@@ -67,6 +69,7 @@ function render(): void {
           <button class="text-button" data-action="open-roster">클럽원</button>
           <button class="text-button" data-action="share-image">공유 이미지</button>
           <button class="text-button" data-action="toggle-data">데이터</button>
+          <button class="help-button" type="button" data-action="open-help" aria-label="사용법 보기" title="사용법 보기">?</button>
         </div>
       </section>
 
@@ -97,6 +100,7 @@ function render(): void {
       ${renderActiveTab()}
       ${rosterOpen ? renderRosterDrawer() : ""}
       ${clubOpen ? renderClubDrawer() : ""}
+      ${helpOpen ? renderHelpOverlay() : ""}
     </main>
   `;
 
@@ -117,6 +121,102 @@ function renderDataPanel(): string {
       <button data-action="export">백업 저장(JSON)</button>
       <label class="data-upload">백업 불러오기(JSON)<input type="file" accept="application/json" data-action="import" /></label>
     </section>
+  `;
+}
+
+function renderHelpOverlay(): string {
+  return `
+    <div class="help-backdrop" data-action="close-help"></div>
+    <section class="help-page" role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <div class="help-page__header">
+        <div>
+          <h2 id="help-title">사용법</h2>
+          <p>처음부터 공유까지 필요한 버튼 순서만 빠르게 확인하세요.</p>
+        </div>
+        <button class="icon-button icon-button--small" type="button" data-action="close-help" aria-label="사용법 닫기">×</button>
+      </div>
+      <div class="help-page__content">
+        <div class="help-flow" aria-label="대진표 만들기 흐름">
+          ${renderHelpStep("1", "클럽원", "회원 등록")}
+          ${renderHelpStep("2", "참가", "이번 주 인원")}
+          ${renderHelpStep("3", "조건", "시간 · 코트")}
+          ${renderHelpStep("4", "필수페어", "원하는 조합")}
+          ${renderHelpStep("5", "대진 생성", "표 만들기")}
+          ${renderHelpStep("6", "공유", "이미지 · 백업")}
+        </div>
+
+        <section class="help-section help-section--split">
+          <div>
+            <h3>먼저 누를 곳</h3>
+            <div class="help-actions" aria-label="주요 버튼">
+              <span>클럽 관리</span>
+              <span>클럽원</span>
+              <span>참가 탭</span>
+              <span>필수페어 탭</span>
+              <span>대진 생성</span>
+            </div>
+          </div>
+          <div class="help-note">
+            <strong>시간 조정</strong>
+            <span>참가 탭에서 사람별 시작/종료 시간을 바꾸면 늦참·조퇴가 대진에 반영됩니다.</span>
+          </div>
+        </section>
+
+        <section class="help-section">
+          <div class="help-section__title">
+            <h3>대진표에서 바로 수정</h3>
+            <span>드래그 또는 탭</span>
+          </div>
+          <div class="help-demo" aria-label="대진표 수정 예시">
+            <div class="help-demo__court">
+              <strong>17:00 · 1코트</strong>
+              <div class="help-demo__teams">
+                <span>민준</span>
+                <span>서연</span>
+                <b>vs</b>
+                <span>지호</span>
+                <span>하윤</span>
+              </div>
+            </div>
+            <div class="help-demo__move">⇄</div>
+            <div class="help-demo__court">
+              <strong>17:30 · 2코트</strong>
+              <div class="help-demo__teams">
+                <span>도윤</span>
+                <span class="help-demo__empty">빈칸</span>
+                <b>vs</b>
+                <span>수아</span>
+                <span>서준</span>
+              </div>
+            </div>
+          </div>
+          <div class="help-tips">
+            <span>선수 이름 드래그: 자리 바꾸기</span>
+            <span>선수 이름 탭: 빈칸으로 빼기</span>
+            <span>빈칸 탭: 대기 선수 넣기</span>
+          </div>
+        </section>
+
+        <section class="help-section help-section--compact">
+          <h3>끝나면</h3>
+          <div class="help-actions">
+            <span>공유 이미지</span>
+            <span>기록 탭</span>
+            <span>데이터 백업</span>
+          </div>
+        </section>
+      </div>
+    </section>
+  `;
+}
+
+function renderHelpStep(number: string, label: string, meta: string): string {
+  return `
+    <div class="help-step">
+      <span>${number}</span>
+      <strong>${label}</strong>
+      <small>${meta}</small>
+    </div>
   `;
 }
 
@@ -648,6 +748,8 @@ function handleClick(event: Event): void {
   if (action === "switch-tab") switchTab(actionTarget.dataset.tab);
   if (action === "open-clubs") openClubs();
   if (action === "close-clubs") closeClubs();
+  if (action === "open-help") openHelp();
+  if (action === "close-help") closeHelp();
   if (action === "add-club") addClub();
   if (action === "switch-club") switchClub(actionTarget.dataset.clubId ?? "");
   if (action === "delete-club") deleteClub(actionTarget.dataset.clubId ?? "");
@@ -677,6 +779,26 @@ function handleClick(event: Event): void {
   if (action === "delete-history") deleteHistory(actionTarget.dataset.historyId ?? "");
 }
 
+function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key !== "Escape") return;
+  if (helpOpen) {
+    closeHelp();
+    return;
+  }
+  if (rosterOpen) {
+    closeRoster();
+    return;
+  }
+  if (clubOpen) {
+    closeClubs();
+    return;
+  }
+  if (calendarOpen) {
+    calendarOpen = false;
+    render();
+  }
+}
+
 function switchTab(tab: string | undefined): void {
   if (tab === "schedule" || tab === "participants" || tab === "pairs" || tab === "history") {
     activeTab = tab;
@@ -692,6 +814,17 @@ function openClubs(): void {
 
 function closeClubs(): void {
   clubOpen = false;
+  render();
+}
+
+function openHelp(): void {
+  helpOpen = true;
+  calendarOpen = false;
+  render();
+}
+
+function closeHelp(): void {
+  helpOpen = false;
   render();
 }
 
