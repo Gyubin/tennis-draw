@@ -3,3 +3,4 @@ web/dist/
 .omc
 .omx
 .playwright-mcp
+.DS_Store
