@@ -33,6 +33,7 @@ const TIME_OPTION_END = parseTimeToMinutes("23:30");
 const TIME_OPTION_STEP = 30;
 const TOUCH_DRAG_DELAY_MS = 500;
 const DRAG_MOVE_THRESHOLD_PX = 5;
+const TOUCH_SCROLL_THRESHOLD_PX = 12;
 
 render();
 
@@ -780,13 +781,15 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
   };
   const onMove = (moveEvent: PointerEvent) => {
     if (moveEvent.pointerId !== pointerId) return;
-    if (!active && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) {
+    const distanceX = Math.abs(moveEvent.clientX - startX);
+    const distanceY = Math.abs(moveEvent.clientY - startY);
+    if (!active && distanceY > TOUCH_SCROLL_THRESHOLD_PX && distanceY > distanceX * 1.2) {
       cancel();
       return;
     }
     if (active) {
       moveEvent.preventDefault();
-      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
+      if (Math.hypot(distanceX, distanceY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
       moveGhost(moveEvent.clientX, moveEvent.clientY);
     }
   };
@@ -1036,7 +1039,10 @@ function newWeek(): void {
 function addPair(): void {
   const players = participants(true);
   if (players.length < 2) return;
-  activeClub().currentWeek.requiredPairs.push({ player1Id: players[0].playerId, player2Id: players[1].playerId });
+  const existingPairKeys = new Set(activeClub().currentWeek.requiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
+  const nextPair = findFirstAvailablePair(players, existingPairKeys);
+  if (!nextPair) return;
+  activeClub().currentWeek.requiredPairs.push(nextPair);
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -1059,6 +1065,20 @@ function updatePairFromRow(row: HTMLElement): void {
   if (pair.player1Id === pair.player2Id) {
     const fallback = participants(true).find((player) => player.playerId !== pair.player1Id);
     if (fallback) pair.player2Id = fallback.playerId;
+  }
+  const existingPairKeys = new Set(
+    activeClub().currentWeek.requiredPairs
+      .filter((_, pairIndex) => pairIndex !== index)
+      .map((item) => pairKey(item.player1Id, item.player2Id)),
+  );
+  if (existingPairKeys.has(pairKey(pair.player1Id, pair.player2Id))) {
+    const replacement = findFirstAvailablePair(participants(true), existingPairKeys);
+    if (!replacement) {
+      activeClub().currentWeek.requiredPairs.splice(index, 1);
+    } else {
+      pair.player1Id = replacement.player1Id;
+      pair.player2Id = replacement.player2Id;
+    }
   }
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
@@ -1216,6 +1236,7 @@ async function shareImage(): Promise<void> {
   if (sharingImage) return;
   const historyEntry = selectedHistoryId ? activeClub().scheduleHistory.find((entry) => entry.historyId === selectedHistoryId) : null;
   const result = historyEntry?.schedule ?? activeClub().currentWeek.lastSchedule;
+  const requiredPairs = historyEntry?.requiredPairs ?? activeClub().currentWeek.requiredPairs;
   if (!result) {
     alert("먼저 대진표를 생성하세요.");
     return;
@@ -1224,7 +1245,7 @@ async function shareImage(): Promise<void> {
   try {
     const title = historyEntry ? historyEntry.name : `테니스 대진표 ${activeClub().currentWeek.weekLabel}`;
     const filenameLabel = historyEntry?.dateLabel ?? activeClub().currentWeek.weekLabel;
-    const blob = await createSharePngBlob(result, title);
+    const blob = await createSharePngBlob(result, title, requiredPairs);
     const file = new File([blob], `tennis-draw-${filenameLabel}.png`, { type: "image/png" });
     const navigatorWithShare = navigator as Navigator & {
       canShare?: (data: ShareData) => boolean;
@@ -1233,7 +1254,6 @@ async function shareImage(): Promise<void> {
     if (navigatorWithShare.canShare?.({ files: [file] }) && navigatorWithShare.share) {
       await navigatorWithShare.share({
         files: [file],
-        title: "테니스 대진표",
       });
       return;
     }
@@ -1292,6 +1312,21 @@ function cloneRequiredPairs(requiredPairs: RequiredPair[]): RequiredPair[] {
 
 function cloneScheduleResult(schedule: ScheduleResult): ScheduleResult {
   return JSON.parse(JSON.stringify(schedule)) as ScheduleResult;
+}
+
+function findFirstAvailablePair(players: Player[], existingPairKeys: Set<string>): RequiredPair | null {
+  for (let firstIndex = 0; firstIndex < players.length - 1; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < players.length; secondIndex += 1) {
+      const player1Id = players[firstIndex].playerId;
+      const player2Id = players[secondIndex].playerId;
+      if (!existingPairKeys.has(pairKey(player1Id, player2Id))) return { player1Id, player2Id };
+    }
+  }
+  return null;
+}
+
+function pairKey(a: string, b: string): string {
+  return [a, b].sort().join("|");
 }
 
 function createHistoryId(): string {

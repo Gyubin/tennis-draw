@@ -39,6 +39,34 @@ describe("share image", () => {
     expect(svg).toContain("A1/빈칸 vs B1/B2");
     expect(svg).toContain("1코트</text>");
   });
+
+  it("renders player stats and validation summary below the schedule", () => {
+    const result = sampleResult();
+    result.playerSummaries = [
+      {
+        playerId: "a1",
+        name: "A1",
+        gender: "M",
+        totalMatches: 3,
+        sameGenderDoublesMatches: 2,
+        mixedDoublesMatches: 1,
+        sameGenderRatio: 2 / 3,
+      },
+    ];
+    result.repeatedTeamPairs = [{ names: ["A1", "A2"], count: 2 }];
+    result.playersWithTwoSlotWait = ["B1"];
+    result.unmetRequiredPairs = [{ player1Id: "c1", player2Id: "d1" }];
+
+    const svg = buildShareSvg(result, "테니스 대진표", [
+      { player1Id: "a1", player2Id: "a2" },
+      { player1Id: "c1", player2Id: "d1" },
+    ]);
+
+    expect(svg).toContain("통계 · A1 총 3 / 동성 2 / 혼성 1 / 동성비율 67%");
+    expect(svg).toContain("검증 · 동일 페어 반복 A1/A2 2회");
+    expect(svg).toContain("2타임 이상 대기자 B1");
+    expect(svg).toContain("필수 페어 미충족 1/2: C1/D1");
+  });
 });
 
 function sampleResult(): ScheduleResult {

@@ -1,6 +1,6 @@
 import { displayMatchTypeLabel } from "./domain/scheduler";
 import { formatMinutes } from "./domain/time";
-import type { ScheduleResult, ScheduledMatch } from "./domain/types";
+import type { Player, RequiredPair, ScheduleResult, ScheduledMatch } from "./domain/types";
 
 export interface ShareRow {
   time: string;
@@ -31,13 +31,15 @@ export function buildShareRows(result: ScheduleResult): ShareRow[] {
     }));
 }
 
-export function buildShareSvg(result: ScheduleResult, title: string): string {
+export function buildShareSvg(result: ScheduleResult, title: string, requiredPairs: RequiredPair[] = []): string {
   const rows = buildShareRows(result);
+  const analysisLines = buildAnalysisLines(result, requiredPairs);
   const maxCourts = Math.max(1, ...rows.map((row) => row.courts.length));
   const width = 1080;
   const titleHeight = 88;
   const rowHeight = 104;
-  const footerHeight = 44;
+  const analysisLineHeight = 28;
+  const footerHeight = 44 + analysisLines.length * analysisLineHeight;
   const timeWidth = 150;
   const courtWidth = Math.floor((width - timeWidth - 40) / maxCourts);
   const height = titleHeight + rows.length * rowHeight + footerHeight;
@@ -69,13 +71,19 @@ export function buildShareSvg(result: ScheduleResult, title: string): string {
       <text x="20" y="44" font-size="34" font-weight="900" fill="#111811">${escapeXml(title)}</text>
       <text x="20" y="74" font-size="22" font-weight="700" fill="#4d5947">총 ${result.matches.length}경기 · ${rows.length}타임</text>
       ${cells}
+      ${analysisLines
+        .map(
+          (line, index) =>
+            `<text x="20" y="${titleHeight + rows.length * rowHeight + 28 + index * analysisLineHeight}" font-size="20" font-weight="700" fill="#344130">${escapeXml(line)}</text>`,
+        )
+        .join("")}
       <text x="20" y="${height - 16}" font-size="18" fill="#65705f">Tennis Draw</text>
     </svg>
   `;
 }
 
-export async function createSharePngBlob(result: ScheduleResult, title: string): Promise<Blob> {
-  const svg = buildShareSvg(result, title);
+export async function createSharePngBlob(result: ScheduleResult, title: string, requiredPairs: RequiredPair[] = []): Promise<Blob> {
+  const svg = buildShareSvg(result, title, requiredPairs);
   const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
   try {
     const image = await loadImage(url);
@@ -111,6 +119,52 @@ function compactNames(value: string): string {
 
 function slotName(player: ScheduledMatch["team1"][number]): string {
   return player?.name ?? "빈칸";
+}
+
+function buildAnalysisLines(result: ScheduleResult, requiredPairs: RequiredPair[]): string[] {
+  return [
+    `통계 · ${buildPlayerStatsText(result)}`,
+    `검증 · 동일 페어 반복 ${buildRepeatedPairsText(result)} · 2타임 이상 대기자 ${buildTwoSlotWaitText(result)} · 필수 페어 ${buildRequiredPairsText(result, requiredPairs)}`,
+  ];
+}
+
+function buildPlayerStatsText(result: ScheduleResult): string {
+  if (result.playerSummaries.length === 0) return "없음";
+  return result.playerSummaries
+    .map(
+      (summary) =>
+        `${summary.name} 총 ${summary.totalMatches} / 동성 ${summary.sameGenderDoublesMatches} / 혼성 ${summary.mixedDoublesMatches} / 동성비율 ${Math.round(
+          summary.sameGenderRatio * 100,
+        )}%`,
+    )
+    .join(" · ");
+}
+
+function buildRepeatedPairsText(result: ScheduleResult): string {
+  if (result.repeatedTeamPairs.length === 0) return "없음";
+  return result.repeatedTeamPairs.map((pair) => `${pair.names.join("/")} ${pair.count}회`).join(", ");
+}
+
+function buildTwoSlotWaitText(result: ScheduleResult): string {
+  return result.playersWithTwoSlotWait.length > 0 ? result.playersWithTwoSlotWait.join(", ") : "없음";
+}
+
+function buildRequiredPairsText(result: ScheduleResult, requiredPairs: RequiredPair[]): string {
+  if (requiredPairs.length === 0) return "설정 없음";
+  const unmetPairKeys = new Set(result.unmetRequiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
+  const playersById = new Map(result.players.map((player: Player) => [player.playerId, player.name]));
+  const unmetPairs = requiredPairs.filter((pair) => unmetPairKeys.has(pairKey(pair.player1Id, pair.player2Id)));
+  const metCount = requiredPairs.length - unmetPairs.length;
+  if (unmetPairs.length === 0) return `충족 ${metCount}/${requiredPairs.length}`;
+  return `미충족 ${unmetPairs.length}/${requiredPairs.length}: ${unmetPairs.map((pair) => pairNames(pair, playersById)).join(", ")}`;
+}
+
+function pairNames(pair: RequiredPair, playersById: Map<string, string>): string {
+  return `${playersById.get(pair.player1Id) ?? pair.player1Id}/${playersById.get(pair.player2Id) ?? pair.player2Id}`;
+}
+
+function pairKey(a: string, b: string): string {
+  return [a, b].sort().join("|");
 }
 
 function escapeXml(value: string): string {
