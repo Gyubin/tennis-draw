@@ -147,6 +147,17 @@ describe("storage", () => {
     expect(restored.clubs.map((club) => club.name)).toEqual(["기본 클럽", "두번째 클럽"]);
     expect(restored.activeClubId).toBe(restored.clubs[0].clubId);
   });
+
+  it("normalizes saved required pairs to soft mode by default", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    state.clubs[0].currentWeek.requiredPairs = [{ player1Id: "m1", player2Id: "m2" }];
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.requiredPairs).toEqual([{ player1Id: "m1", player2Id: "m2", mode: "soft" }]);
+  });
 });
 
 function legacyState(): AppStateV1 {

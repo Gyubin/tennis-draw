@@ -23,6 +23,13 @@ interface MatchCandidate {
   secondaryScore: number;
 }
 
+interface HardPair {
+  key: string;
+  player1Id: string;
+  player2Id: string;
+  matchTypes: Set<MatchType>;
+}
+
 interface MutableStats {
   matches: Map<string, number>;
   sameGender: Map<string, number>;
@@ -317,6 +324,26 @@ function chooseBestMatchesForSlot(args: {
   return bestSelection;
 }
 
+function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
+  return hardPairs.some(
+    (pair) => pair.matchTypes.has(candidate.matchType) && (candidate.playerIds.has(pair.player1Id) || candidate.playerIds.has(pair.player2Id)),
+  );
+}
+
+function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
+  return hardPairs.every((pair) => {
+    if (!pair.matchTypes.has(candidate.matchType)) return true;
+    const team1Count = countPlayersInTeam(candidate.teams[0], pair);
+    const team2Count = countPlayersInTeam(candidate.teams[1], pair);
+    const totalCount = team1Count + team2Count;
+    return totalCount === 0 || team1Count === 2 || team2Count === 2;
+  });
+}
+
+function countPlayersInTeam(team: [Player, Player], pair: HardPair): number {
+  return team.filter((player) => player.playerId === pair.player1Id || player.playerId === pair.player2Id).length;
+}
+
 function maxSelectionSize(candidates: MatchCandidate[], courts: number): number {
   let best = 0;
   const backtrack = (startIndex: number, chosenCount: number, usedPlayerIds: Set<string>) => {
@@ -335,6 +362,120 @@ function maxSelectionSize(candidates: MatchCandidate[], courts: number): number 
   return best;
 }
 
+function applyHardPairsToSchedule(matches: ScheduledMatch[], players: Player[], hardPairs: HardPair[], slotMinutes: number): ScheduledMatch[] {
+  const adjustedMatches: ScheduledMatch[] = [];
+  const slots = Array.from(new Set(matches.map((match) => match.slotStart))).sort((a, b) => a - b);
+
+  for (const slotStart of slots) {
+    const slotMatches = matches.filter((match) => match.slotStart === slotStart).sort((a, b) => a.court - b.court);
+    const availablePlayers = players.filter((player) => isPlayerAvailable(player, slotStart, slotMinutes));
+    const replacements = chooseHardPairSlotReplacements(slotMatches, availablePlayers, hardPairs);
+    adjustedMatches.push(...replacements);
+  }
+
+  return adjustedMatches.sort((a, b) => a.slotStart - b.slotStart || a.court - b.court);
+}
+
+function chooseHardPairSlotReplacements(slotMatches: ScheduledMatch[], availablePlayers: Player[], hardPairs: HardPair[]): ScheduledMatch[] {
+  const baselineCandidates = slotMatches.map(matchToCandidate);
+  const targetIndexes = baselineCandidates.flatMap((candidate, index) => (isHardPairTargetCandidate(candidate, hardPairs) ? [index] : []));
+  if (targetIndexes.length === 0 || targetIndexes.every((index) => isCandidateHardPairCompliant(baselineCandidates[index], hardPairs))) {
+    return slotMatches;
+  }
+
+  const fixedPlayerIds = new Set(
+    baselineCandidates.flatMap((candidate, index) => (targetIndexes.includes(index) ? [] : Array.from(candidate.playerIds))),
+  );
+  const allCandidates = generateUnscoredMatchCandidates(availablePlayers);
+  const replacementGroups = targetIndexes.map((matchIndex) => {
+    const target = baselineCandidates[matchIndex];
+    return allCandidates
+      .filter(
+        (candidate) =>
+          candidate.matchType === target.matchType &&
+          isCandidateHardPairCompliant(candidate, hardPairs) &&
+          !setsIntersect(candidate.playerIds, fixedPlayerIds),
+      )
+      .sort((a, b) => scoreReplacementCandidate(b, target) - scoreReplacementCandidate(a, target));
+  });
+  if (replacementGroups.some((group) => group.length === 0)) return slotMatches;
+
+  let bestReplacement: MatchCandidate[] | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  const backtrack = (index: number, chosen: MatchCandidate[], usedPlayerIds: Set<string>) => {
+    if (index === replacementGroups.length) {
+      const score = chosen.reduce((sum, candidate, candidateIndex) => sum + scoreReplacementCandidate(candidate, baselineCandidates[targetIndexes[candidateIndex]]), 0);
+      if (score > bestScore) {
+        bestScore = score;
+        bestReplacement = [...chosen];
+      }
+      return;
+    }
+
+    for (const candidate of replacementGroups[index]) {
+      if (setsIntersect(candidate.playerIds, usedPlayerIds)) continue;
+      chosen.push(candidate);
+      for (const id of candidate.playerIds) usedPlayerIds.add(id);
+      backtrack(index + 1, chosen, usedPlayerIds);
+      for (const id of candidate.playerIds) usedPlayerIds.delete(id);
+      chosen.pop();
+    }
+  };
+
+  backtrack(0, [], new Set(fixedPlayerIds));
+  if (!bestReplacement) return slotMatches;
+
+  const replacementByIndex = new Map<number, MatchCandidate>();
+  targetIndexes.forEach((matchIndex, replacementIndex) => {
+    replacementByIndex.set(matchIndex, bestReplacement?.[replacementIndex] ?? baselineCandidates[matchIndex]);
+  });
+
+  return slotMatches.map((match, index) => {
+    const replacement = replacementByIndex.get(index);
+    if (!replacement) return match;
+    return {
+      ...match,
+      team1: replacement.teams[0],
+      team2: replacement.teams[1],
+      matchType: replacement.matchType,
+    };
+  });
+}
+
+function generateUnscoredMatchCandidates(availablePlayers: Player[]): MatchCandidate[] {
+  return combinations(availablePlayers, 4).flatMap((players) =>
+    generateTeamings(players).map(([teams, matchType]) => ({
+      teams,
+      matchType,
+      playerIds: new Set([...teams[0], ...teams[1]].map((player) => player.playerId)),
+      secondaryScore: 0,
+    })),
+  );
+}
+
+function matchToCandidate(match: ScheduledMatch): MatchCandidate {
+  const teams = [match.team1, match.team2].filter((team): team is [Player, Player] => Boolean(team[0] && team[1]));
+  return {
+    teams: [teams[0], teams[1]],
+    matchType: match.matchType,
+    playerIds: new Set(filledPlayers(match).map((player) => player.playerId)),
+    secondaryScore: 0,
+  };
+}
+
+function scoreReplacementCandidate(candidate: MatchCandidate, target: MatchCandidate): number {
+  let score = 0;
+  for (const playerId of candidate.playerIds) {
+    if (target.playerIds.has(playerId)) score += 100;
+  }
+  for (const team of candidate.teams) {
+    const key = pairKey(team[0].playerId, team[1].playerId);
+    if (target.teams.some((targetTeam) => pairKey(targetTeam[0].playerId, targetTeam[1].playerId) === key)) score += 25;
+  }
+  return score;
+}
+
 export function scheduleMatches(playersInput: Player[], requiredPairs: RequiredPair[], slotMinutes: number, courts: number): ScheduleResult {
   if (slotMinutes <= 0) throw new Error("slotMinutes must be greater than zero.");
   if (courts <= 0) throw new Error("courts must be greater than zero.");
@@ -342,15 +483,17 @@ export function scheduleMatches(playersInput: Player[], requiredPairs: RequiredP
 
   const players = [...playersInput].sort(byPlayerId);
   const playersById = new Map(players.map((player) => [player.playerId, player]));
-  const requiredPairKeys = new Set(requiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
+  const scoringRequiredPairs = requiredPairs.filter((pair) => pair.mode !== "hard");
+  const requiredPairKeys = new Set(scoringRequiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
   const slots = buildSlots(players, slotMinutes);
   const stats = initializeStats(players);
-  const requiredPairSlotCounts = computeRequiredPairSlotCounts(requiredPairs, playersById, slots, slotMinutes);
+  const hardPairs = buildHardPairs(requiredPairs, playersById);
+  const requiredPairSlotCounts = computeRequiredPairSlotCounts(scoringRequiredPairs, playersById, slots, slotMinutes);
   const matches: ScheduledMatch[] = [];
   const [targetFloor, targetMax] = estimateMatchCountTargets(players, slotMinutes, courts);
   const womenDoublesLimit = determineWomenDoublesLimit(players);
-  const mixedPriorityPlayerIds = buildMixedPriorityPlayerIds(requiredPairs, playersById);
-  const requiredPairPlayerIds = buildRequiredPairPlayerIds(requiredPairs);
+  const mixedPriorityPlayerIds = buildMixedPriorityPlayerIds(scoringRequiredPairs, playersById);
+  const requiredPairPlayerIds = buildRequiredPairPlayerIds(scoringRequiredPairs);
   const unpairedPlayerIds = new Set(players.filter((player) => !requiredPairPlayerIds.has(player.playerId)).map((player) => player.playerId));
   const earliestStart = Math.min(...players.map((player) => player.availableStart));
   const earliestStartPlayerIds = new Set(players.filter((player) => player.availableStart === earliestStart).map((player) => player.playerId));
@@ -394,7 +537,15 @@ export function scheduleMatches(playersInput: Player[], requiredPairs: RequiredP
     });
   });
 
-  return buildScheduleResult(matches, players, requiredPairs, stats, playersById);
+  const finalMatches = hardPairs.length > 0 ? applyHardPairsToSchedule(matches, players, hardPairs, slotMinutes) : matches;
+  const finalStats = initializeStats(players);
+  const finalRequiredPairKeys = new Set(requiredPairs.map((pair) => pairKey(pair.player1Id, pair.player2Id)));
+  for (const match of finalMatches) {
+    const teams = [match.team1, match.team2].filter((team): team is [Player, Player] => Boolean(team[0] && team[1]));
+    if (teams.length === 2) updateStats([teams[0], teams[1]], match.matchType, finalStats, finalRequiredPairKeys);
+  }
+
+  return buildScheduleResult(finalMatches, players, requiredPairs, finalStats, playersById);
 }
 
 export function buildScheduleResult(
@@ -422,7 +573,7 @@ export function buildScheduleResult(
     matches: [...matches],
     players: [...players],
     playerSummaries,
-    unmetRequiredPairs: requiredPairs.filter((pair) => !stats.satisfiedRequiredPairs.has(pairKey(pair.player1Id, pair.player2Id))),
+    unmetRequiredPairs: buildUnmetRequiredPairs(matches, requiredPairs, stats, playersById),
     repeatedTeamPairs: buildRepeatedTeamPairs(stats, playersById),
     playersWithTwoSlotWait: computePlayersWithTwoSlotWait(matches, players),
   };
@@ -436,6 +587,38 @@ export function summarizeManualSchedule(matches: ScheduledMatch[], players: Play
     updateManualStats(match, stats, requiredPairKeys);
   }
   return buildScheduleResult([...matches].sort((a, b) => a.slotStart - b.slotStart || a.court - b.court), players, requiredPairs, stats, playersById);
+}
+
+function buildUnmetRequiredPairs(
+  matches: ScheduledMatch[],
+  requiredPairs: RequiredPair[],
+  stats: MutableStats,
+  playersById: Map<string, Player>,
+): RequiredPair[] {
+  const hardPairs = buildHardPairs(requiredPairs, playersById);
+  const hardPairViolations = new Set<string>();
+
+  for (const match of matches) {
+    for (const pair of hardPairs) {
+      if (!pair.matchTypes.has(match.matchType)) continue;
+      const team1Count = countPlayersInScheduleTeam(match.team1, pair);
+      const team2Count = countPlayersInScheduleTeam(match.team2, pair);
+      const totalCount = team1Count + team2Count;
+      if (totalCount > 0 && team1Count !== 2 && team2Count !== 2) {
+        hardPairViolations.add(pair.key);
+      }
+    }
+  }
+
+  return requiredPairs.filter((pair) => {
+    const key = pairKey(pair.player1Id, pair.player2Id);
+    if (pair.mode === "hard") return hardPairViolations.has(key);
+    return !stats.satisfiedRequiredPairs.has(key);
+  });
+}
+
+function countPlayersInScheduleTeam(team: ScheduledMatch["team1"], pair: HardPair): number {
+  return team.filter((player) => player?.playerId === pair.player1Id || player?.playerId === pair.player2Id).length;
 }
 
 function computeRequiredPairSlotCounts(requiredPairs: RequiredPair[], playersById: Map<string, Player>, slots: number[], slotMinutes: number): Map<string, number> {
@@ -537,6 +720,29 @@ function buildMixedPriorityPlayerIds(requiredPairs: RequiredPair[], playersById:
     result.add(player2.playerId);
   }
   return result;
+}
+
+function buildHardPairs(requiredPairs: RequiredPair[], playersById: Map<string, Player>): HardPair[] {
+  return requiredPairs.flatMap((pair) => {
+    if (pair.mode !== "hard") return [];
+    const player1 = playersById.get(pair.player1Id);
+    const player2 = playersById.get(pair.player2Id);
+    if (!player1 || !player2) return [];
+    return [
+      {
+        key: pairKey(pair.player1Id, pair.player2Id),
+        player1Id: pair.player1Id,
+        player2Id: pair.player2Id,
+        matchTypes: hardPairMatchTypes(player1, player2),
+      },
+    ];
+  });
+}
+
+function hardPairMatchTypes(player1: Player, player2: Player): Set<MatchType> {
+  if (player1.gender !== player2.gender) return new Set(["mixed_doubles"]);
+  if (player1.gender === "M") return new Set(["men_doubles", "men_doubles_substitute"]);
+  return new Set(["women_doubles"]);
 }
 
 function buildRequiredPairPlayerIds(requiredPairs: RequiredPair[]): Set<string> {

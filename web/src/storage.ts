@@ -1,5 +1,15 @@
 import { buildCurrentWeekLabel, parseLocalDate, parseTimeToMinutes } from "./domain/time";
-import type { AppSettings, AppState, AppStateV1, BackupV1, BackupV2, ClubState, Player } from "./domain/types";
+import type {
+  AppSettings,
+  AppState,
+  AppStateV1,
+  BackupV1,
+  BackupV2,
+  ClubState,
+  Player,
+  RequiredPair,
+  ScheduleHistoryEntry,
+} from "./domain/types";
 
 const STORAGE_KEY = "tennis-draw:v2";
 const V1_STORAGE_KEY = "tennis-draw:v1";
@@ -101,7 +111,7 @@ function normalizeClub(club: ClubState): ClubState {
   const fallback = defaultClub(club.clubId || createClubId(), club.name || DEFAULT_CLUB_NAME);
   const roster = Array.isArray(club.roster) ? club.roster.map(normalizePlayer) : [];
   const rosterIds = new Set(roster.map((player) => player.playerId));
-  const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory : [];
+  const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory.map(normalizeHistoryEntry) : [];
   const currentWeek = { ...fallback.currentWeek, ...club.currentWeek };
   const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === currentWeek.activeHistoryId)
     ? currentWeek.activeHistoryId
@@ -116,11 +126,28 @@ function normalizeClub(club: ClubState): ClubState {
       weekLabel: normalizeDateLabel(currentWeek.weekLabel),
       participantIds: Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => rosterIds.has(id)) : [],
       requiredPairs: Array.isArray(currentWeek.requiredPairs)
-        ? currentWeek.requiredPairs.filter((pair) => rosterIds.has(pair.player1Id) && rosterIds.has(pair.player2Id))
+        ? currentWeek.requiredPairs
+            .filter((pair) => rosterIds.has(pair.player1Id) && rosterIds.has(pair.player2Id))
+            .map(normalizeRequiredPair)
         : [],
       activeHistoryId,
     },
     scheduleHistory,
+  };
+}
+
+function normalizeHistoryEntry(entry: ScheduleHistoryEntry): ScheduleHistoryEntry {
+  return {
+    ...entry,
+    requiredPairs: Array.isArray(entry.requiredPairs) ? entry.requiredPairs.map(normalizeRequiredPair) : [],
+  };
+}
+
+function normalizeRequiredPair(pair: RequiredPair): RequiredPair {
+  return {
+    player1Id: pair.player1Id,
+    player2Id: pair.player2Id,
+    mode: pair.mode === "hard" ? "hard" : "soft",
   };
 }
 

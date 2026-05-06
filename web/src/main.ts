@@ -295,6 +295,7 @@ function renderRequiredPairs(): string {
         <div class="pair-row" data-pair-index="${index}">
           ${renderPlayerSelect("player1", pair.player1Id, activePlayers)}
           ${renderPlayerSelect("player2", pair.player2Id, activePlayers)}
+          ${renderPairModeSelect(pair.mode ?? "soft")}
           <button data-action="delete-pair" data-pair-index="${index}">×</button>
         </div>
       `,
@@ -306,6 +307,15 @@ function renderPlayerSelect(name: string, selectedId: string, players: Player[])
   return `
     <select name="${name}">
       ${players.map((player) => `<option value="${player.playerId}" ${player.playerId === selectedId ? "selected" : ""}>${escapeHtml(player.name)}</option>`).join("")}
+    </select>
+  `;
+}
+
+function renderPairModeSelect(mode: RequiredPair["mode"]): string {
+  return `
+    <select name="mode" aria-label="페어 규칙">
+      <option value="soft" ${mode !== "hard" ? "selected" : ""}>최소 1회</option>
+      <option value="hard" ${mode === "hard" ? "selected" : ""}>항상 같은 편</option>
     </select>
   `;
 }
@@ -1059,9 +1069,9 @@ function updatePairFromRow(row: HTMLElement): void {
   const index = Number(row.dataset.pairIndex);
   const pair = activeClub().currentWeek.requiredPairs[index];
   if (!pair) return;
-  const selects = row.querySelectorAll<HTMLSelectElement>("select");
-  pair.player1Id = selects[0]?.value ?? pair.player1Id;
-  pair.player2Id = selects[1]?.value ?? pair.player2Id;
+  pair.player1Id = row.querySelector<HTMLSelectElement>("select[name='player1']")?.value ?? pair.player1Id;
+  pair.player2Id = row.querySelector<HTMLSelectElement>("select[name='player2']")?.value ?? pair.player2Id;
+  pair.mode = row.querySelector<HTMLSelectElement>("select[name='mode']")?.value === "hard" ? "hard" : "soft";
   if (pair.player1Id === pair.player2Id) {
     const fallback = participants(true).find((player) => player.playerId !== pair.player1Id);
     if (fallback) pair.player2Id = fallback.playerId;
@@ -1078,6 +1088,7 @@ function updatePairFromRow(row: HTMLElement): void {
     } else {
       pair.player1Id = replacement.player1Id;
       pair.player2Id = replacement.player2Id;
+      pair.mode = replacement.mode;
     }
   }
   activeClub().currentWeek.lastSchedule = null;
@@ -1319,7 +1330,7 @@ function findFirstAvailablePair(players: Player[], existingPairKeys: Set<string>
     for (let secondIndex = firstIndex + 1; secondIndex < players.length; secondIndex += 1) {
       const player1Id = players[firstIndex].playerId;
       const player2Id = players[secondIndex].playerId;
-      if (!existingPairKeys.has(pairKey(player1Id, player2Id))) return { player1Id, player2Id };
+      if (!existingPairKeys.has(pairKey(player1Id, player2Id))) return { player1Id, player2Id, mode: "soft" };
     }
   }
   return null;

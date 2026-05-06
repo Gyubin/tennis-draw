@@ -55,6 +55,74 @@ describe("scheduleMatches", () => {
     expect(result.unmetRequiredPairs).toHaveLength(0);
   });
 
+  it("keeps a hard same-gender pair together only in same-gender matches", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "20:30"),
+      player("m2", "M2", "M", "18:00", "20:30"),
+      player("m3", "M3", "M", "18:00", "20:30"),
+      player("m4", "M4", "M", "18:00", "20:30"),
+      player("f1", "F1", "F", "18:00", "20:30"),
+      player("f2", "F2", "F", "18:00", "20:30"),
+    ];
+
+    const baseline = scheduleMatches(players, [], 30, 1);
+    const result = scheduleMatches(players, [{ player1Id: "m1", player2Id: "m2", mode: "hard" }], 30, 1);
+
+    expect(matchTypeCounts(result.matches)).toEqual(matchTypeCounts(baseline.matches));
+    expect(nonTargetMatchSignature(result.matches, new Set(["men_doubles", "men_doubles_substitute"]))).toEqual(
+      nonTargetMatchSignature(baseline.matches, new Set(["men_doubles", "men_doubles_substitute"])),
+    );
+    for (const match of result.matches.filter((item) => item.matchType === "men_doubles" || item.matchType === "men_doubles_substitute")) {
+      expect(matchHasNoPairMemberOrTeam(match, "m1", "m2")).toBe(true);
+    }
+    expect(result.unmetRequiredPairs).toEqual([]);
+  });
+
+  it("keeps a hard mixed pair together only in mixed doubles", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "20:30"),
+      player("m2", "M2", "M", "18:00", "20:30"),
+      player("m3", "M3", "M", "18:00", "20:30"),
+      player("m4", "M4", "M", "18:00", "20:30"),
+      player("f1", "F1", "F", "18:00", "20:30"),
+      player("f2", "F2", "F", "18:00", "20:30"),
+    ];
+
+    const baseline = scheduleMatches(players, [], 30, 1);
+    const result = scheduleMatches(players, [{ player1Id: "m1", player2Id: "f1", mode: "hard" }], 30, 1);
+
+    expect(matchTypeCounts(result.matches)).toEqual(matchTypeCounts(baseline.matches));
+    expect(nonTargetMatchSignature(result.matches, new Set(["mixed_doubles"]))).toEqual(
+      nonTargetMatchSignature(baseline.matches, new Set(["mixed_doubles"])),
+    );
+    for (const match of result.matches.filter((item) => item.matchType === "mixed_doubles")) {
+      expect(matchHasNoPairMemberOrTeam(match, "m1", "f1")).toBe(true);
+    }
+    expect(result.unmetRequiredPairs).toEqual([]);
+  });
+
+  it("relaxes an impossible hard pair without changing the generated match count", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("m3", "M3", "M", "18:00", "18:30"),
+      player("m4", "M4", "M", "18:00", "18:30"),
+    ];
+    const result = scheduleMatches(
+      players,
+      [
+        { player1Id: "m1", player2Id: "m2", mode: "hard" },
+        { player1Id: "m1", player2Id: "m3", mode: "hard" },
+      ],
+      30,
+      1,
+    );
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].matchType).toBe("men_doubles");
+    expect(result.unmetRequiredPairs.length).toBeGreaterThan(0);
+  });
+
   it("does not use substitute match when override is false", () => {
     const result = scheduleMatches(
       [
@@ -227,4 +295,32 @@ function player(
     showLateJoin: false,
     showEarlyLeave: false,
   };
+}
+
+function matchTypeCounts(matches: ScheduledMatch[]): Record<string, number> {
+  return matches.reduce<Record<string, number>>((counts, match) => {
+    counts[match.matchType] = (counts[match.matchType] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function nonTargetMatchSignature(matches: ScheduledMatch[], targetTypes: Set<ScheduledMatch["matchType"]>): string[] {
+  return matches
+    .filter((match) => !targetTypes.has(match.matchType))
+    .map((match) => `${match.slotStart}:${match.court}:${teamKey(match.team1)}:${teamKey(match.team2)}:${match.matchType}`);
+}
+
+function teamKey(team: ScheduledMatch["team1"]): string {
+  return team
+    .map((player) => player?.playerId ?? "")
+    .sort()
+    .join("/");
+}
+
+function matchHasNoPairMemberOrTeam(match: ScheduledMatch, player1Id: string, player2Id: string): boolean {
+  const teamCounts = [match.team1, match.team2].map(
+    (team) => team.filter((player) => player?.playerId === player1Id || player?.playerId === player2Id).length,
+  );
+  const totalCount = teamCounts[0] + teamCounts[1];
+  return totalCount === 0 || teamCounts.includes(2);
 }

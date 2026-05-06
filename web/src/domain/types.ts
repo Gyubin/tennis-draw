@@ -20,6 +20,7 @@ export interface Player {
 export interface RequiredPair {
   player1Id: string;
   player2Id: string;
+  mode?: "soft" | "hard";
 }
 
 export interface ScheduledMatch {
