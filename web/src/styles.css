@@ -578,6 +578,14 @@ button:active {
   background: #f0f7eb;
   touch-action: manipulation;
   user-select: none;
+  will-change: transform;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease,
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .player-chip strong {
@@ -838,6 +846,36 @@ button:active {
   text-align: center;
 }
 
+.player-chip--drag-pressing {
+  border-color: #517943;
+  box-shadow:
+    0 0 0 3px rgb(81 121 67 / 18%),
+    0 6px 16px rgb(32 37 31 / 12%);
+  transform: scale(1.03);
+}
+
+.player-chip--drag-source {
+  opacity: 0.42;
+  border-style: dashed;
+  background: #e7f1df;
+  transform: scale(0.98);
+}
+
+.player-chip--drop-target {
+  border-color: #355f2e;
+  background: #e3f3d8;
+  box-shadow:
+    0 0 0 2px rgb(53 95 46 / 15%),
+    0 5px 13px rgb(32 37 31 / 12%);
+  transform: translate3d(var(--drag-push-x, 0), var(--drag-push-y, 0), 0) scale(0.96);
+}
+
+.player-chip--drop-invalid {
+  border-color: #c76c6c;
+  background: #fff0f0;
+  box-shadow: 0 0 0 2px rgb(199 108 108 / 16%);
+}
+
 .player-chip--empty {
   border-style: dashed;
   color: #7a8574;
@@ -1020,7 +1058,46 @@ button:active {
   z-index: 9999;
   pointer-events: none;
   opacity: 0.9;
-  box-shadow: 0 10px 24px rgb(32 37 31 / 20%);
+  box-shadow:
+    0 0 0 3px rgb(255 255 255 / 80%),
+    0 14px 30px rgb(32 37 31 / 26%);
+  transform: translate(-50%, -50%) scale(1.08);
+  animation: drag-pop 160ms cubic-bezier(0.18, 0.95, 0.28, 1.25);
+}
+
+.schedule-swap-overlay {
+  position: fixed;
+  z-index: 9998;
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 0;
+  margin: 0;
+  opacity: 0.95;
+  box-shadow: 0 10px 24px rgb(32 37 31 / 18%);
+}
+
+@keyframes drag-pop {
+  0% {
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+
+  70% {
+    transform: translate(-50%, -50%) scale(1.12);
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-chip,
+  .drag-ghost {
+    transition-duration: 1ms;
+    animation-duration: 1ms;
+  }
 }
 
 select,

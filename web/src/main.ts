@@ -1,5 +1,6 @@
 import "./styles.css";
 import { nextHistoryName } from "./domain/history";
+import { canSwapScheduleCells, isSameScheduleCell, swapScheduleCells, type ScheduleCell } from "./domain/manualSchedule";
 import { displayMatchTypeLabel, filledPlayers, scheduleMatches } from "./domain/scheduler";
 import { comparePlayerSummaries } from "./domain/sorting";
 import { buildCurrentWeekLabel, formatLocalDate, formatMinutes, parseLocalDate, parseTimeToMinutes } from "./domain/time";
@@ -8,7 +9,13 @@ import { validateSchedule } from "./domain/validation";
 import { createSharePngBlob } from "./shareImage";
 import { createBackup, defaultClub, loadState, restoreBackup, saveState } from "./storage";
 
-type DragPayload = { kind: "schedule"; matchIndex: number; side: "team1" | "team2"; position: 0 | 1 };
+type DragPayload = { kind: "schedule" } & ScheduleCell;
+type SwapAnimationSnapshot = {
+  sourceClone: HTMLElement;
+  targetClone: HTMLElement;
+  sourceRect: DOMRect;
+  targetRect: DOMRect;
+};
 
 let state: AppState = loadState();
 let activeTab: "schedule" | "participants" | "pairs" | "history" = "schedule";
@@ -21,6 +28,8 @@ let selectedHistoryId: string | null = null;
 let sharingImage = false;
 let dragPayload: DragPayload | null = null;
 let ghost: HTMLElement | null = null;
+let dragSourceElement: HTMLElement | null = null;
+let dragTargetElement: HTMLElement | null = null;
 let dragMoved = false;
 let suppressNextScheduleClick = false;
 let emptySlotPicker: Extract<DragPayload, { kind: "schedule" }> | null = null;
@@ -782,6 +791,7 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
   let active = false;
   let cancelled = false;
   const pointerId = event.pointerId;
+  element.classList.add("player-chip--drag-pressing");
   const timer = window.setTimeout(() => {
     if (cancelled) return;
     active = true;
@@ -790,6 +800,7 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
 
   const cleanup = () => {
     window.clearTimeout(timer);
+    if (!active) element.classList.remove("player-chip--drag-pressing");
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
     document.removeEventListener("pointercancel", onCancel);
@@ -810,6 +821,7 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
       moveEvent.preventDefault();
       if (Math.hypot(distanceX, distanceY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
       moveGhost(moveEvent.clientX, moveEvent.clientY);
+      updateDragTarget(moveEvent.clientX, moveEvent.clientY);
     }
   };
   const onUp = (upEvent: PointerEvent) => {
@@ -836,18 +848,21 @@ function startDelayedTouchDrag(element: HTMLElement, event: PointerEvent, startX
 
 function beginScheduleDrag(element: HTMLElement, pointerId: number, clientX: number, clientY: number): void {
   dragMoved = false;
+  clearDragTarget();
   setPointerCapture(element, pointerId);
   const rect = element.getBoundingClientRect();
   ghost = element.cloneNode(true) as HTMLElement;
   ghost.classList.add("drag-ghost");
   ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
   document.body.appendChild(ghost);
+  dragSourceElement = element;
+  element.classList.remove("player-chip--drag-pressing");
+  element.classList.add("player-chip--drag-source");
   moveGhost(clientX, clientY);
   dragPayload = {
     kind: "schedule",
-    matchIndex: Number(element.dataset.matchIndex),
-    side: element.dataset.side === "team1" ? "team1" : "team2",
-    position: Number(element.dataset.position) === 0 ? 0 : 1,
+    ...scheduleCellFromElement(element),
   };
 }
 
@@ -856,6 +871,7 @@ function bindActiveDragListeners(element: HTMLElement, pointerId: number, startX
     if (moveEvent.pointerId !== pointerId) return;
     if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > DRAG_MOVE_THRESHOLD_PX) dragMoved = true;
     moveGhost(moveEvent.clientX, moveEvent.clientY);
+    updateDragTarget(moveEvent.clientX, moveEvent.clientY);
   };
   const onUp = (upEvent: PointerEvent) => {
     if (upEvent.pointerId !== pointerId) return;
@@ -880,27 +896,126 @@ function bindActiveDragListeners(element: HTMLElement, pointerId: number, startX
 }
 
 function finishDrag(clientX: number, clientY: number): void {
-  ghost?.remove();
-  ghost = null;
   const payload = dragPayload;
-  dragPayload = null;
+  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
+  const snapshot = payload && target ? captureSwapAnimation(payload, scheduleCellFromElement(target)) : null;
+  cleanupDragVisualState();
   if (!payload) return;
   if (!dragMoved) return;
-  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
   if (!target) return;
 
   swapSchedulePlayers(payload, {
     kind: "schedule",
-    matchIndex: Number(target.dataset.matchIndex),
-    side: target.dataset.side === "team1" ? "team1" : "team2",
-    position: Number(target.dataset.position) === 0 ? 0 : 1,
-  });
+    ...scheduleCellFromElement(target),
+  }, snapshot);
 }
 
 function cancelDrag(): void {
+  cleanupDragVisualState();
+}
+
+function cleanupDragVisualState(): void {
   ghost?.remove();
   ghost = null;
   dragPayload = null;
+  dragSourceElement?.classList.remove("player-chip--drag-pressing", "player-chip--drag-source");
+  dragSourceElement = null;
+  clearDragTarget();
+}
+
+function updateDragTarget(clientX: number, clientY: number): void {
+  const payload = dragPayload;
+  if (!payload) return;
+  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
+  if (target === dragTargetElement) {
+    updateDragTargetPush(target, clientX, clientY);
+    return;
+  }
+  clearDragTarget();
+  if (!target) return;
+
+  const targetCell = scheduleCellFromElement(target);
+  if (isSameScheduleCell(payload, targetCell)) return;
+  dragTargetElement = target;
+  const schedule = activeClub().currentWeek.lastSchedule;
+  const valid = Boolean(schedule && canSwapScheduleCells(schedule.matches, payload, targetCell));
+  target.classList.add(valid ? "player-chip--drop-target" : "player-chip--drop-invalid");
+  updateDragTargetPush(target, clientX, clientY);
+}
+
+function clearDragTarget(): void {
+  if (!dragTargetElement) return;
+  dragTargetElement.classList.remove("player-chip--drop-target", "player-chip--drop-invalid");
+  dragTargetElement.style.removeProperty("--drag-push-x");
+  dragTargetElement.style.removeProperty("--drag-push-y");
+  dragTargetElement = null;
+}
+
+function updateDragTargetPush(target: HTMLElement | null, clientX: number, clientY: number): void {
+  if (!target || !target.classList.contains("player-chip--drop-target")) return;
+  const rect = target.getBoundingClientRect();
+  const deltaX = rect.left + rect.width / 2 - clientX;
+  const deltaY = rect.top + rect.height / 2 - clientY;
+  const distance = Math.max(Math.hypot(deltaX, deltaY), 1);
+  const push = 10;
+  target.style.setProperty("--drag-push-x", `${(deltaX / distance) * push}px`);
+  target.style.setProperty("--drag-push-y", `${(deltaY / distance) * push}px`);
+}
+
+function scheduleCellFromElement(element: HTMLElement): ScheduleCell {
+  return {
+    matchIndex: Number(element.dataset.matchIndex),
+    side: element.dataset.side === "team1" ? "team1" : "team2",
+    position: Number(element.dataset.position) === 0 ? 0 : 1,
+  };
+}
+
+function captureSwapAnimation(source: ScheduleCell, target: ScheduleCell): SwapAnimationSnapshot | null {
+  if (isSameScheduleCell(source, target)) return null;
+  const schedule = activeClub().currentWeek.lastSchedule;
+  if (!schedule || !canSwapScheduleCells(schedule.matches, source, target)) return null;
+  const sourceElement = findScheduleCellElement(source);
+  const targetElement = findScheduleCellElement(target);
+  if (!sourceElement || !targetElement) return null;
+  return {
+    sourceClone: sourceElement.cloneNode(true) as HTMLElement,
+    targetClone: targetElement.cloneNode(true) as HTMLElement,
+    sourceRect: sourceElement.getBoundingClientRect(),
+    targetRect: targetElement.getBoundingClientRect(),
+  };
+}
+
+function findScheduleCellElement(cell: ScheduleCell): HTMLElement | null {
+  return app.querySelector<HTMLElement>(
+    `[data-draggable='schedule'][data-match-index='${cell.matchIndex}'][data-side='${cell.side}'][data-position='${cell.position}']`,
+  );
+}
+
+function animateScheduleSwap(snapshot: SwapAnimationSnapshot | null): void {
+  if (!snapshot) return;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reducedMotion) return;
+  animateSwapClone(snapshot.sourceClone, snapshot.sourceRect, snapshot.targetRect);
+  animateSwapClone(snapshot.targetClone, snapshot.targetRect, snapshot.sourceRect);
+}
+
+function animateSwapClone(clone: HTMLElement, from: DOMRect, to: DOMRect): void {
+  clone.classList.remove("player-chip--drag-source", "player-chip--drop-target", "player-chip--drop-invalid");
+  clone.classList.add("schedule-swap-overlay");
+  clone.style.left = `${from.left}px`;
+  clone.style.top = `${from.top}px`;
+  clone.style.width = `${from.width}px`;
+  clone.style.height = `${from.height}px`;
+  document.body.appendChild(clone);
+  const animation = clone.animate(
+    [
+      { transform: "translate3d(0, 0, 0) scale(1.05)", opacity: 0.95 },
+      { transform: `translate3d(${to.left - from.left}px, ${to.top - from.top}px, 0) scale(1)`, opacity: 0.2 },
+    ],
+    { duration: 210, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" },
+  );
+  animation.addEventListener("finish", () => clone.remove());
+  animation.addEventListener("cancel", () => clone.remove());
 }
 
 function setPointerCapture(element: HTMLElement, pointerId: number): void {
@@ -921,8 +1036,8 @@ function releasePointerCapture(element: HTMLElement, pointerId: number): void {
 
 function moveGhost(clientX: number, clientY: number): void {
   if (!ghost) return;
-  ghost.style.left = `${clientX + 8}px`;
-  ghost.style.top = `${clientY + 8}px`;
+  ghost.style.left = `${clientX}px`;
+  ghost.style.top = `${clientY}px`;
 }
 
 function updatePlayerFromForm(form: HTMLFormElement): void {
@@ -1127,20 +1242,16 @@ function updatePairFromRow(row: HTMLElement): void {
   commit();
 }
 
-function swapSchedulePlayers(source: DragPayload, target: DragPayload): void {
+function swapSchedulePlayers(source: DragPayload, target: DragPayload, animation: SwapAnimationSnapshot | null): void {
   const schedule = activeClub().currentWeek.lastSchedule;
   if (!schedule) return;
-  const sourceMatch = schedule.matches[source.matchIndex];
-  const targetMatch = schedule.matches[target.matchIndex];
-  if (!sourceMatch || !targetMatch) return;
-  const sourcePlayer = sourceMatch[source.side][source.position];
-  sourceMatch[source.side][source.position] = targetMatch[target.side][target.position];
-  targetMatch[target.side][target.position] = sourcePlayer;
+  if (!swapScheduleCells(schedule.matches, source, target)) return;
   const validation = validateSchedule(schedule.matches, schedule.players, activeClub().currentWeek.requiredPairs);
   activeClub().currentWeek.lastSchedule = validation.summary;
   syncActiveHistory(validation.summary);
   emptySlotPicker = null;
   commit();
+  animateScheduleSwap(animation);
 }
 
 function benchSchedulePlayer(target: HTMLElement): void {
