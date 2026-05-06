@@ -16,6 +16,10 @@ type SwapAnimationSnapshot = {
   sourceRect: DOMRect;
   targetRect: DOMRect;
 };
+type DragTargetSnapshot = {
+  element: HTMLElement;
+  rect: DOMRect;
+};
 
 let state: AppState = loadState();
 let activeTab: "schedule" | "participants" | "pairs" | "history" = "schedule";
@@ -31,6 +35,7 @@ let dragPayload: DragPayload | null = null;
 let ghost: HTMLElement | null = null;
 let dragSourceElement: HTMLElement | null = null;
 let dragTargetElement: HTMLElement | null = null;
+let dragTargetSnapshot: DragTargetSnapshot | null = null;
 let dragMoved = false;
 let suppressNextScheduleClick = false;
 let emptySlotPicker: Extract<DragPayload, { kind: "schedule" }> | null = null;
@@ -44,6 +49,7 @@ const TIME_OPTION_STEP = 30;
 const TOUCH_DRAG_DELAY_MS = 500;
 const DRAG_MOVE_THRESHOLD_PX = 5;
 const TOUCH_SCROLL_THRESHOLD_PX = 12;
+const DRAG_TARGET_STICKY_MARGIN_PX = 12;
 
 render();
 document.addEventListener("keydown", handleDocumentKeydown);
@@ -1035,7 +1041,7 @@ function bindActiveDragListeners(element: HTMLElement, pointerId: number, startX
 
 function finishDrag(clientX: number, clientY: number): void {
   const payload = dragPayload;
-  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
+  const target = resolveScheduleDragTarget(clientX, clientY);
   const snapshot = payload && target ? captureSwapAnimation(payload, scheduleCellFromElement(target)) : null;
   cleanupDragVisualState();
   if (!payload) return;
@@ -1064,7 +1070,7 @@ function cleanupDragVisualState(): void {
 function updateDragTarget(clientX: number, clientY: number): void {
   const payload = dragPayload;
   if (!payload) return;
-  const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']");
+  const target = resolveScheduleDragTarget(clientX, clientY);
   if (target === dragTargetElement) {
     updateDragTargetPush(target, clientX, clientY);
     return;
@@ -1075,6 +1081,7 @@ function updateDragTarget(clientX: number, clientY: number): void {
   const targetCell = scheduleCellFromElement(target);
   if (isSameScheduleCell(payload, targetCell)) return;
   dragTargetElement = target;
+  dragTargetSnapshot = { element: target, rect: target.getBoundingClientRect() };
   const schedule = activeClub().currentWeek.lastSchedule;
   const valid = Boolean(schedule && canSwapScheduleCells(schedule.matches, payload, targetCell));
   target.classList.add(valid ? "player-chip--drop-target" : "player-chip--drop-invalid");
@@ -1087,17 +1094,33 @@ function clearDragTarget(): void {
   dragTargetElement.style.removeProperty("--drag-push-x");
   dragTargetElement.style.removeProperty("--drag-push-y");
   dragTargetElement = null;
+  dragTargetSnapshot = null;
 }
 
 function updateDragTargetPush(target: HTMLElement | null, clientX: number, clientY: number): void {
   if (!target || !target.classList.contains("player-chip--drop-target")) return;
-  const rect = target.getBoundingClientRect();
+  const rect = dragTargetSnapshot?.element === target ? dragTargetSnapshot.rect : target.getBoundingClientRect();
   const deltaX = rect.left + rect.width / 2 - clientX;
   const deltaY = rect.top + rect.height / 2 - clientY;
   const distance = Math.max(Math.hypot(deltaX, deltaY), 1);
   const push = 10;
   target.style.setProperty("--drag-push-x", `${(deltaX / distance) * push}px`);
   target.style.setProperty("--drag-push-y", `${(deltaY / distance) * push}px`);
+}
+
+function resolveScheduleDragTarget(clientX: number, clientY: number): HTMLElement | null {
+  if (
+    dragTargetElement &&
+    dragTargetSnapshot?.element === dragTargetElement &&
+    isPointInsideRect(clientX, clientY, dragTargetSnapshot.rect, DRAG_TARGET_STICKY_MARGIN_PX)
+  ) {
+    return dragTargetElement;
+  }
+  return document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-draggable='schedule']") ?? null;
+}
+
+function isPointInsideRect(clientX: number, clientY: number, rect: DOMRect, margin: number): boolean {
+  return clientX >= rect.left - margin && clientX <= rect.right + margin && clientY >= rect.top - margin && clientY <= rect.bottom + margin;
 }
 
 function scheduleCellFromElement(element: HTMLElement): ScheduleCell {
