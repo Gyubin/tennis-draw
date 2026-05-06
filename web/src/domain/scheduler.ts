@@ -16,6 +16,10 @@ export const MATCH_TYPE_LABELS: Record<MatchType, string> = {
 
 export type ScheduleSlot = ScheduledMatch["team1"][number];
 
+interface ScheduleOptions {
+  shuffleSeed?: number;
+}
+
 interface MatchCandidate {
   teams: [[Player, Player], [Player, Player]];
   matchType: MatchType;
@@ -263,6 +267,7 @@ function chooseBestMatchesForSlot(args: {
   targetFloor: number;
   targetMax: number;
   womenDoublesLimit: number | null;
+  shuffleSeed?: number;
 }): MatchCandidate[] {
   let candidates = generateMatchCandidates(
     args.availablePlayers,
@@ -275,6 +280,9 @@ function chooseBestMatchesForSlot(args: {
     args.targetMax,
     args.womenDoublesLimit,
   );
+  if (args.shuffleSeed !== undefined) {
+    candidates = shuffleBySeed(candidates, args.shuffleSeed);
+  }
   if (candidates.length === 0) return [];
 
   const regularCandidates = candidates.filter((candidate) => candidate.matchType !== "men_doubles_substitute");
@@ -476,7 +484,13 @@ function scoreReplacementCandidate(candidate: MatchCandidate, target: MatchCandi
   return score;
 }
 
-export function scheduleMatches(playersInput: Player[], requiredPairs: RequiredPair[], slotMinutes: number, courts: number): ScheduleResult {
+export function scheduleMatches(
+  playersInput: Player[],
+  requiredPairs: RequiredPair[],
+  slotMinutes: number,
+  courts: number,
+  options: ScheduleOptions = {},
+): ScheduleResult {
   if (slotMinutes <= 0) throw new Error("slotMinutes must be greater than zero.");
   if (courts <= 0) throw new Error("courts must be greater than zero.");
   if (playersInput.length < 4) throw new Error("최소 4명의 참가자가 필요합니다.");
@@ -518,6 +532,7 @@ export function scheduleMatches(playersInput: Player[], requiredPairs: RequiredP
       targetFloor,
       targetMax,
       womenDoublesLimit,
+      shuffleSeed: options.shuffleSeed === undefined ? undefined : options.shuffleSeed + slotIndex * 101,
     });
     if (slotIndex === 0) {
       firstSlotWaitingPair = buildWaitingPairKey(selectedMatches, availablePlayers);
@@ -904,6 +919,24 @@ function pairKey(a: string, b: string): string {
 
 function byPlayerId(a: Player, b: Player): number {
   return a.playerId.localeCompare(b.playerId);
+}
+
+function shuffleBySeed<T>(items: T[], seed: number): T[] {
+  const result = [...items];
+  const random = createSeededRandom(seed);
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function createSeededRandom(seed: number): () => number {
+  let state = Math.trunc(seed) || 1;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
 }
 
 function getCount<K>(map: Map<K, number>, key: K): number {

@@ -368,6 +368,20 @@ button:active {
   letter-spacing: 0;
 }
 
+.panel__title-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.panel__title-row h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .panel__header span {
   color: #4d5b47;
   font-weight: 750;
@@ -718,6 +732,23 @@ button:active {
 
 .schedule-panel {
   margin-top: 0;
+}
+
+.schedule-refresh {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  border-color: #cfdac7;
+  background: #f7faf4;
+  color: #2f4928;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.schedule-refresh:hover {
+  border-color: #8da47f;
+  background: #eef6e9;
 }
 
 .empty {

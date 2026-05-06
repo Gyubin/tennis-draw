@@ -26,6 +26,19 @@ describe("scheduleMatches", () => {
     expect(new Set(result.matches.map((match) => match.matchType))).toEqual(new Set(["men_doubles", "women_doubles"]));
   });
 
+  it("can vary tied schedule candidates with a shuffle seed", () => {
+    const players = [
+      ...Array.from({ length: 4 }, (_, index) => player(`m${index + 1}`, `M${index + 1}`, "M", "18:00", "19:00")),
+      ...Array.from({ length: 4 }, (_, index) => player(`f${index + 1}`, `F${index + 1}`, "F", "18:00", "19:00")),
+    ];
+
+    const first = scheduleMatches(players, [], 30, 2, { shuffleSeed: 1 });
+    const second = scheduleMatches(players, [], 30, 2, { shuffleSeed: 2 });
+
+    expect(scheduleSignature(first.matches)).not.toEqual(scheduleSignature(second.matches));
+    expect(first.matches).toHaveLength(second.matches.length);
+  });
+
   it("limits women doubles to two matches when exactly four women participate", () => {
     const players = [
       ...Array.from({ length: 6 }, (_, index) => player(`m${index + 1}`, `M${index + 1}`, "M", "18:00", "20:00")),
@@ -323,4 +336,8 @@ function matchHasNoPairMemberOrTeam(match: ScheduledMatch, player1Id: string, pl
   );
   const totalCount = teamCounts[0] + teamCounts[1];
   return totalCount === 0 || teamCounts.includes(2);
+}
+
+function scheduleSignature(matches: ScheduledMatch[]): string[] {
+  return matches.map((match) => `${match.slotStart}:${match.court}:${teamKey(match.team1)}:${teamKey(match.team2)}:${match.matchType}`);
 }

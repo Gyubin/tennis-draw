@@ -128,10 +128,18 @@ function renderActiveTab(): string {
   const result = historyEntry?.schedule ?? activeClub().currentWeek.lastSchedule;
   const requiredPairs = historyEntry?.requiredPairs ?? activeClub().currentWeek.requiredPairs;
   const readonly = Boolean(historyEntry);
+  const canRegenerate = !readonly && Boolean(result);
   return `
     <section class="panel schedule-panel">
       <div class="panel__header panel__header--compact">
-        <h2>${escapeHtml(title)}</h2>
+        <div class="panel__title-row">
+          <h2>${escapeHtml(title)}</h2>
+          ${
+            canRegenerate
+              ? `<button type="button" class="icon-button icon-button--small schedule-refresh" data-action="regenerate" aria-label="현재 대진표 재생성" title="현재 대진표 재생성">↻</button>`
+              : ""
+          }
+        </div>
         <span>${result?.matches.length ?? 0}경기${historyEntry ? ` · ${escapeHtml(historyEntry.dateLabel)}` : ""}</span>
       </div>
       ${renderSchedule(result, requiredPairs, readonly)}
@@ -650,6 +658,7 @@ function handleClick(event: Event): void {
   if (action === "fill-empty-slot") fillEmptySlot(actionTarget);
   if (action === "bench-schedule-player") benchSchedulePlayer(actionTarget);
   if (action === "generate") generateSchedule();
+  if (action === "regenerate") regenerateSchedule();
   if (action === "new-week") newWeek();
   if (action === "export") exportBackup();
   if (action === "share-image") void shareImage();
@@ -1001,24 +1010,8 @@ function removeParticipant(playerId: string): void {
 }
 
 function generateSchedule(): void {
-  const players = participants(true);
-  if (players.length < 4) {
-    alert("최소 4명의 참가자가 필요합니다.");
-    return;
-  }
-  if (activeClub().settings.endTime <= activeClub().settings.startTime) {
-    alert("전체 끝 시간이 시작보다 늦어야 합니다.");
-    return;
-  }
-  const invalidPlayer = players.find((player) => player.availableEnd <= player.availableStart);
-  if (invalidPlayer) {
-    alert(`${invalidPlayer.name}의 끝 시간이 시작보다 늦어야 합니다.`);
-    activeTab = "participants";
-    render();
-    return;
-  }
-  const schedulePlayers = players.map((player) => ({ ...player, canFillMaleSlot: false }));
-  const schedule = scheduleMatches(schedulePlayers, activeClub().currentWeek.requiredPairs, activeClub().settings.slotMinutes, activeClub().settings.courts);
+  const schedule = createScheduleFromCurrentInputs();
+  if (!schedule) return;
   const historyEntry = createHistoryEntry(schedule);
   activeClub().currentWeek.lastSchedule = schedule;
   activeClub().currentWeek.activeHistoryId = historyEntry.historyId;
@@ -1026,6 +1019,44 @@ function generateSchedule(): void {
   selectedHistoryId = null;
   activeTab = "schedule";
   commit();
+}
+
+function regenerateSchedule(): void {
+  const schedule = createScheduleFromCurrentInputs({ shuffleSeed: Date.now() });
+  if (!schedule) return;
+  activeClub().currentWeek.lastSchedule = schedule;
+  syncActiveHistory(schedule);
+  selectedHistoryId = null;
+  activeTab = "schedule";
+  emptySlotPicker = null;
+  commit();
+}
+
+function createScheduleFromCurrentInputs(options?: { shuffleSeed?: number }): ScheduleResult | null {
+  const players = participants(true);
+  if (players.length < 4) {
+    alert("최소 4명의 참가자가 필요합니다.");
+    return null;
+  }
+  if (activeClub().settings.endTime <= activeClub().settings.startTime) {
+    alert("전체 끝 시간이 시작보다 늦어야 합니다.");
+    return null;
+  }
+  const invalidPlayer = players.find((player) => player.availableEnd <= player.availableStart);
+  if (invalidPlayer) {
+    alert(`${invalidPlayer.name}의 끝 시간이 시작보다 늦어야 합니다.`);
+    activeTab = "participants";
+    render();
+    return null;
+  }
+  const schedulePlayers = players.map((player) => ({ ...player, canFillMaleSlot: false }));
+  return scheduleMatches(
+    schedulePlayers,
+    activeClub().currentWeek.requiredPairs,
+    activeClub().settings.slotMinutes,
+    activeClub().settings.courts,
+    options,
+  );
 }
 
 function newWeek(): void {
