@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { scheduleMatches } from "./domain/scheduler";
-import type { AppStateV1 } from "./domain/types";
+import type { AppStateV1, Player } from "./domain/types";
 import { createBackup, defaultClub, defaultState, loadState, restoreBackup, saveState } from "./storage";
 
 describe("storage", () => {
@@ -158,6 +158,55 @@ describe("storage", () => {
 
     expect(restored.clubs[0].currentWeek.requiredPairs).toEqual([{ player1Id: "m1", player2Id: "m2", mode: "soft" }]);
   });
+
+  it("adds empty guest participants to older saved clubs", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    const legacyClub = {
+      ...state.clubs[0],
+      currentWeek: {
+        weekLabel: state.clubs[0].currentWeek.weekLabel,
+        participantIds: state.clubs[0].currentWeek.participantIds,
+        requiredPairs: state.clubs[0].currentWeek.requiredPairs,
+        lastSchedule: state.clubs[0].currentWeek.lastSchedule,
+        activeHistoryId: state.clubs[0].currentWeek.activeHistoryId,
+      },
+    };
+    storage.setItem("tennis-draw:v2", JSON.stringify({ ...state, clubs: [legacyClub] }));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.guestParticipants).toEqual([]);
+  });
+
+  it("preserves current week guest participants and pairs in v2 state", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    const guest = player("guest-1", "게스트 1", "F");
+    state.clubs[0].currentWeek.guestParticipants = [guest];
+    state.clubs[0].currentWeek.participantIds = ["m1", guest.playerId];
+    state.clubs[0].currentWeek.requiredPairs = [{ player1Id: "m1", player2Id: guest.playerId }];
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.guestParticipants).toEqual([guest]);
+    expect(restored.clubs[0].currentWeek.participantIds).toEqual(["m1", guest.playerId]);
+    expect(restored.clubs[0].currentWeek.requiredPairs).toEqual([{ player1Id: "m1", player2Id: guest.playerId, mode: "soft" }]);
+  });
+
+  it("removes participant ids and pairs for missing guests during normalization", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    state.clubs[0].currentWeek.participantIds = ["m1", "guest-missing"];
+    state.clubs[0].currentWeek.requiredPairs = [{ player1Id: "m1", player2Id: "guest-missing" }];
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.participantIds).toEqual(["m1"]);
+    expect(restored.clubs[0].currentWeek.requiredPairs).toEqual([]);
+  });
 });
 
 function legacyState(): AppStateV1 {
@@ -183,5 +232,18 @@ function memoryStorage(): Storage {
     key: (index: number) => Array.from(data.keys())[index] ?? null,
     removeItem: (key: string) => data.delete(key),
     setItem: (key: string, value: string) => data.set(key, value),
+  };
+}
+
+function player(playerId: string, name: string, gender: "M" | "F"): Player {
+  return {
+    playerId,
+    name,
+    gender,
+    availableStart: 18 * 60,
+    availableEnd: 20 * 60,
+    canFillMaleSlot: false,
+    showLateJoin: false,
+    showEarlyLeave: false,
   };
 }

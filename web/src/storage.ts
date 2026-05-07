@@ -35,6 +35,7 @@ export function defaultClub(clubId: string, name: string, roster: Player[] = [])
     currentWeek: {
       weekLabel: buildCurrentWeekLabel(),
       participantIds: roster.map((player) => player.playerId),
+      guestParticipants: [],
       requiredPairs: [],
       lastSchedule: null,
       activeHistoryId: null,
@@ -110,9 +111,12 @@ function normalizeState(state: AppState): AppState {
 function normalizeClub(club: ClubState): ClubState {
   const fallback = defaultClub(club.clubId || createClubId(), club.name || DEFAULT_CLUB_NAME);
   const roster = Array.isArray(club.roster) ? club.roster.map(normalizePlayer) : [];
-  const rosterIds = new Set(roster.map((player) => player.playerId));
-  const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory.map(normalizeHistoryEntry) : [];
   const currentWeek = { ...fallback.currentWeek, ...club.currentWeek };
+  const guestParticipants = Array.isArray(currentWeek.guestParticipants)
+    ? currentWeek.guestParticipants.map(normalizePlayer)
+    : [];
+  const eligiblePlayerIds = new Set([...roster, ...guestParticipants].map((player) => player.playerId));
+  const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory.map(normalizeHistoryEntry) : [];
   const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === currentWeek.activeHistoryId)
     ? currentWeek.activeHistoryId
     : null;
@@ -124,10 +128,11 @@ function normalizeClub(club: ClubState): ClubState {
     currentWeek: {
       ...currentWeek,
       weekLabel: normalizeDateLabel(currentWeek.weekLabel),
-      participantIds: Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => rosterIds.has(id)) : [],
+      participantIds: Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => eligiblePlayerIds.has(id)) : [],
+      guestParticipants,
       requiredPairs: Array.isArray(currentWeek.requiredPairs)
         ? currentWeek.requiredPairs
-            .filter((pair) => rosterIds.has(pair.player1Id) && rosterIds.has(pair.player2Id))
+            .filter((pair) => eligiblePlayerIds.has(pair.player1Id) && eligiblePlayerIds.has(pair.player2Id))
             .map(normalizeRequiredPair)
         : [],
       activeHistoryId,

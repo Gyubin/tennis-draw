@@ -297,7 +297,10 @@ function renderParticipantsPanel(): string {
     <section class="panel">
       <div class="panel__header">
         <h2>이번주 참가</h2>
-        <span>${activeClub().currentWeek.participantIds.length}명</span>
+        <div class="drawer-actions">
+          <button type="button" data-action="add-guest">게스트 추가</button>
+          <span>${activeClub().currentWeek.participantIds.length}명</span>
+        </div>
       </div>
       <div class="columns">
         <div class="drop-zone" data-participant-zone="active">
@@ -458,17 +461,29 @@ function renderRosterRow(player: Player): string {
 
 function renderParticipantRow(player: Player): string {
   const invalid = player.availableEnd <= player.availableStart;
+  const guest = isGuestParticipant(player.playerId);
+  const timeRange = { min: activeClub().settings.startTime, max: activeClub().settings.endTime };
   return `
-    <div class="participant-row ${invalid ? "participant-row--invalid" : ""}">
-      ${renderPlayerChip(player)}
+    <div class="participant-row ${guest ? "participant-row--guest" : ""} ${invalid ? "participant-row--invalid" : ""}">
+      ${guest ? renderGuestParticipantFields(player) : renderPlayerChip(player)}
       <div class="participant-row__times" aria-label="참가 가능 시간">
-        ${renderTimeSelect("start", player.availableStart, `data-player-time="${player.playerId}" data-time-field="start" aria-label="${escapeHtml(`${player.name} 시작 시간`)}"`)}
+        ${renderTimeSelect("start", player.availableStart, `data-player-time="${player.playerId}" data-time-field="start" aria-label="${escapeHtml(`${player.name} 시작 시간`)}"`, timeRange)}
         <span aria-hidden="true">-</span>
-        ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end" aria-label="${escapeHtml(`${player.name} 종료 시간`)}"`)}
+        ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end" aria-label="${escapeHtml(`${player.name} 종료 시간`)}"`, timeRange)}
       </div>
-      <button type="button" data-action="remove-participant" data-player-id="${player.playerId}">불참</button>
+      <button type="button" data-action="remove-participant" data-player-id="${player.playerId}">${guest ? "삭제" : "불참"}</button>
       ${invalid ? `<small>끝 시간이 시작보다 늦어야 합니다.</small>` : ""}
     </div>
+  `;
+}
+
+function renderGuestParticipantFields(player: Player): string {
+  return `
+    <input data-guest-field="name" data-player-id="${player.playerId}" value="${escapeHtml(player.name)}" aria-label="${escapeHtml(`${player.name} 이름`)}" />
+    <select data-guest-field="gender" data-player-id="${player.playerId}" aria-label="${escapeHtml(`${player.name} 성별`)}">
+      <option value="M" ${player.gender === "M" ? "selected" : ""}>남</option>
+      <option value="F" ${player.gender === "F" ? "selected" : ""}>여</option>
+    </select>
   `;
 }
 
@@ -481,22 +496,29 @@ function renderInactiveParticipantRow(player: Player): string {
   `;
 }
 
-function renderTimeSelect(name: string, selectedMinutes: number, attributes: string): string {
+function renderTimeSelect(
+  name: string,
+  selectedMinutes: number,
+  attributes: string,
+  range: { min: number; max: number } = { min: TIME_OPTION_START, max: TIME_OPTION_END },
+): string {
   return `
     <select name="${name}" class="time-text" ${attributes}>
-      ${timeOptions(selectedMinutes)
+      ${timeOptions(selectedMinutes, range)
         .map((minutes) => `<option value="${formatMinutes(minutes)}" ${minutes === selectedMinutes ? "selected" : ""}>${formatMinutes(minutes)}</option>`)
         .join("")}
     </select>
   `;
 }
 
-function timeOptions(selectedMinutes: number): number[] {
+function timeOptions(selectedMinutes: number, range: { min: number; max: number }): number[] {
   const options: number[] = [];
-  for (let minutes = TIME_OPTION_START; minutes <= TIME_OPTION_END; minutes += TIME_OPTION_STEP) {
+  const start = Math.max(TIME_OPTION_START, Math.min(range.min, range.max));
+  const end = Math.min(TIME_OPTION_END, Math.max(range.min, range.max));
+  for (let minutes = start; minutes <= end; minutes += TIME_OPTION_STEP) {
     options.push(minutes);
   }
-  if (!options.includes(selectedMinutes)) {
+  if (selectedMinutes >= start && selectedMinutes <= end && !options.includes(selectedMinutes)) {
     options.push(selectedMinutes);
     options.sort((a, b) => a - b);
   }
@@ -721,6 +743,9 @@ function bindEvents(): void {
   app.querySelectorAll<HTMLFormElement>("[data-player-form]").forEach((form) => {
     form.addEventListener("change", () => updatePlayerFromForm(form));
   });
+  app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-guest-field]").forEach((input) => {
+    input.addEventListener("change", () => updateGuestParticipant(input));
+  });
   app.querySelectorAll<HTMLElement>("[data-pair-index]").forEach((row) => {
     row.addEventListener("change", () => updatePairFromRow(row));
   });
@@ -767,6 +792,7 @@ function handleClick(event: Event): void {
   if (action === "calendar-next") moveCalendarMonth(1);
   if (action === "select-date") selectDate(actionTarget.dataset.date ?? "");
   if (action === "add-player") addPlayer();
+  if (action === "add-guest") addGuestParticipant();
   if (action === "delete-player") deletePlayer(actionTarget.dataset.playerId ?? "");
   if (action === "add-participant") addParticipant(actionTarget.dataset.playerId ?? "");
   if (action === "remove-participant") removeParticipant(actionTarget.dataset.playerId ?? "");
@@ -1218,7 +1244,7 @@ function updateSettingsTime(field: "startTime" | "endTime", value: string): void
   const minutes = parseTimeToMinutes(value);
   activeClub().settings[field] = minutes;
   for (const playerId of activeClub().currentWeek.participantIds) {
-    const player = activeClub().roster.find((item) => item.playerId === playerId);
+    const player = findCurrentWeekPlayer(playerId);
     if (!player) continue;
     if (field === "startTime") player.availableStart = minutes;
     if (field === "endTime") player.availableEnd = minutes;
@@ -1228,11 +1254,30 @@ function updateSettingsTime(field: "startTime" | "endTime", value: string): void
 }
 
 function updateParticipantTime(input: HTMLInputElement | HTMLSelectElement): void {
-  const player = activeClub().roster.find((item) => item.playerId === input.dataset.playerTime);
+  const player = findCurrentWeekPlayer(input.dataset.playerTime ?? "");
   if (!player) return;
-  const minutes = parseTimeToMinutes(input.value);
+  const minutes = clampTimeToCurrentSettings(parseTimeToMinutes(input.value));
   if (input.dataset.timeField === "start") player.availableStart = minutes;
   if (input.dataset.timeField === "end") player.availableEnd = minutes;
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
+  commit();
+}
+
+function clampTimeToCurrentSettings(minutes: number): number {
+  return Math.min(activeClub().settings.endTime, Math.max(activeClub().settings.startTime, minutes));
+}
+
+function updateGuestParticipant(input: HTMLInputElement | HTMLSelectElement): void {
+  const player = activeClub().currentWeek.guestParticipants.find((item) => item.playerId === input.dataset.playerId);
+  if (!player) return;
+  if (input.dataset.guestField === "name") {
+    player.name = input.value.trim() || player.name;
+  }
+  if (input.dataset.guestField === "gender") {
+    player.gender = input.value === "F" ? "F" : "M";
+    player.canFillMaleSlot = false;
+  }
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -1255,6 +1300,25 @@ function addPlayer(): void {
   commit();
 }
 
+function addGuestParticipant(): void {
+  const nextNumber = activeClub().currentWeek.guestParticipants.length + 1;
+  const player: Player = {
+    playerId: createGuestId(),
+    name: `게스트 ${nextNumber}`,
+    gender: "M",
+    availableStart: activeClub().settings.startTime,
+    availableEnd: activeClub().settings.endTime,
+    canFillMaleSlot: false,
+    showLateJoin: false,
+    showEarlyLeave: false,
+  };
+  activeClub().currentWeek.guestParticipants.push(player);
+  activeClub().currentWeek.participantIds.push(player.playerId);
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
+  commit();
+}
+
 function deletePlayer(playerId: string): void {
   activeClub().roster = activeClub().roster.filter((player) => player.playerId !== playerId);
   activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
@@ -1266,7 +1330,7 @@ function deletePlayer(playerId: string): void {
 
 function addParticipant(playerId: string): void {
   if (!activeClub().currentWeek.participantIds.includes(playerId)) {
-    const player = activeClub().roster.find((item) => item.playerId === playerId);
+    const player = findCurrentWeekPlayer(playerId);
     if (player) {
       player.availableStart = activeClub().settings.startTime;
       player.availableEnd = activeClub().settings.endTime;
@@ -1280,6 +1344,10 @@ function addParticipant(playerId: string): void {
 
 function removeParticipant(playerId: string): void {
   activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
+  if (isGuestParticipant(playerId)) {
+    activeClub().currentWeek.guestParticipants = activeClub().currentWeek.guestParticipants.filter((player) => player.playerId !== playerId);
+    activeClub().currentWeek.requiredPairs = activeClub().currentWeek.requiredPairs.filter((pair) => pair.player1Id !== playerId && pair.player2Id !== playerId);
+  }
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -1344,7 +1412,8 @@ function newWeek(): void {
   }
   activeClub().currentWeek = {
     weekLabel: buildCurrentWeekLabel(),
-    participantIds: [...activeClub().currentWeek.participantIds],
+    participantIds: activeClub().currentWeek.participantIds.filter((id) => activeClub().roster.some((player) => player.playerId === id)),
+    guestParticipants: [],
     requiredPairs: [],
     lastSchedule: null,
     activeHistoryId: null,
@@ -1605,11 +1674,19 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 function participants(active: boolean): Player[] {
   const activeIds = new Set(activeClub().currentWeek.participantIds);
-  const rosterById = new Map(activeClub().roster.map((player) => [player.playerId, player]));
   if (active) {
-    return activeClub().currentWeek.participantIds.map((id) => rosterById.get(id)).filter((player): player is Player => Boolean(player));
+    return activeClub().currentWeek.participantIds.map(findCurrentWeekPlayer).filter((player): player is Player => Boolean(player));
   }
   return activeClub().roster.filter((player) => !activeIds.has(player.playerId));
+}
+
+function findCurrentWeekPlayer(playerId: string): Player | undefined {
+  return activeClub().roster.find((player) => player.playerId === playerId)
+    ?? activeClub().currentWeek.guestParticipants.find((player) => player.playerId === playerId);
+}
+
+function isGuestParticipant(playerId: string): boolean {
+  return activeClub().currentWeek.guestParticipants.some((player) => player.playerId === playerId);
 }
 
 function activeClub(): ClubState {
@@ -1649,6 +1726,10 @@ function createHistoryId(): string {
 
 function createClubId(): string {
   return crypto.randomUUID?.() ?? `club-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createGuestId(): string {
+  return `guest-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function groupMatches(matches: ScheduledMatch[]): Array<[number, ScheduledMatch[]]> {

@@ -511,6 +511,10 @@ button:active {
   background: #fbfcf8;
 }
 
+.participant-row--guest {
+  grid-template-columns: minmax(100px, 1fr) 68px minmax(192px, auto) 54px;
+}
+
 .inactive-participant-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 54px;
@@ -1622,6 +1626,10 @@ select,
     gap: 6px 8px;
   }
 
+  .participant-row--guest {
+    grid-template-columns: minmax(0, 1fr) 68px 50px;
+  }
+
   .participant-row .player-chip {
     min-height: 34px;
     padding: 5px 6px;
@@ -1636,6 +1644,10 @@ select,
   .participant-row button[data-action="remove-participant"] {
     grid-column: 2;
     grid-row: 1;
+  }
+
+  .participant-row--guest button[data-action="remove-participant"] {
+    grid-column: 3;
   }
 
   .columns {

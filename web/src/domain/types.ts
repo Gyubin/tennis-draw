@@ -61,6 +61,7 @@ export interface AppSettings {
 export interface WeekState {
   weekLabel: string;
   participantIds: string[];
+  guestParticipants: Player[];
   requiredPairs: RequiredPair[];
   lastSchedule: ScheduleResult | null;
   activeHistoryId: string | null;
