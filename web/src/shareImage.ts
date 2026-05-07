@@ -33,16 +33,17 @@ export function buildShareRows(result: ScheduleResult): ShareRow[] {
 
 export function buildShareSvg(result: ScheduleResult, title: string, requiredPairs: RequiredPair[] = []): string {
   const rows = buildShareRows(result);
-  const analysisLines = buildAnalysisLines(result, requiredPairs);
+  const playerStatCards = buildPlayerStatCards(result);
+  const validationCards = buildValidationCards(result, requiredPairs);
   const maxCourts = Math.max(1, ...rows.map((row) => row.courts.length));
   const width = 1080;
   const titleHeight = 88;
   const rowHeight = 104;
-  const analysisLineHeight = 28;
-  const footerHeight = 44 + analysisLines.length * analysisLineHeight;
+  const footerHeight = calculateAnalysisHeight(playerStatCards, validationCards);
   const timeWidth = 150;
   const courtWidth = Math.floor((width - timeWidth - 40) / maxCourts);
   const height = titleHeight + rows.length * rowHeight + footerHeight;
+  const analysisY = titleHeight + rows.length * rowHeight;
 
   const cells = rows
     .map((row, rowIndex) => {
@@ -71,12 +72,7 @@ export function buildShareSvg(result: ScheduleResult, title: string, requiredPai
       <text x="20" y="44" font-size="34" font-weight="900" fill="#111811">${escapeXml(title)}</text>
       <text x="20" y="74" font-size="22" font-weight="700" fill="#4d5947">총 ${result.matches.length}경기 · ${rows.length}타임</text>
       ${cells}
-      ${analysisLines
-        .map(
-          (line, index) =>
-            `<text x="20" y="${titleHeight + rows.length * rowHeight + 28 + index * analysisLineHeight}" font-size="20" font-weight="700" fill="#344130">${escapeXml(line)}</text>`,
-        )
-        .join("")}
+      ${renderAnalysisSections(analysisY, playerStatCards, validationCards)}
       <text x="20" y="${height - 16}" font-size="18" fill="#65705f">Tennis Draw</text>
     </svg>
   `;
@@ -121,23 +117,118 @@ function slotName(player: ScheduledMatch["team1"][number]): string {
   return player?.name ?? "빈칸";
 }
 
-function buildAnalysisLines(result: ScheduleResult, requiredPairs: RequiredPair[]): string[] {
+interface PlayerStatCard {
+  name: string;
+  total: string;
+  doubles: string;
+  ratio: string;
+}
+
+interface ValidationCard {
+  label: string;
+  value: string;
+  tone: "ok" | "warn";
+}
+
+function buildPlayerStatCards(result: ScheduleResult): PlayerStatCard[] {
+  if (result.playerSummaries.length === 0) {
+    return [
+      {
+        name: "선수 통계",
+        total: "집계 없음",
+        doubles: "",
+        ratio: "",
+      },
+    ];
+  }
+  return result.playerSummaries.map((summary) => ({
+    name: summary.name,
+    total: `총 ${summary.totalMatches}경기`,
+    doubles: `동성 ${summary.sameGenderDoublesMatches} · 혼성 ${summary.mixedDoublesMatches}`,
+    ratio: `동성비율 ${Math.round(summary.sameGenderRatio * 100)}%`,
+  }));
+}
+
+function buildValidationCards(result: ScheduleResult, requiredPairs: RequiredPair[]): ValidationCard[] {
   return [
-    `통계 · ${buildPlayerStatsText(result)}`,
-    `검증 · 동일 페어 반복 ${buildRepeatedPairsText(result)} · 2타임 이상 대기자 ${buildTwoSlotWaitText(result)} · 필수 페어 ${buildRequiredPairsText(result, requiredPairs)}`,
+    {
+      label: "동일 페어 반복",
+      value: buildRepeatedPairsText(result),
+      tone: result.repeatedTeamPairs.length === 0 ? "ok" : "warn",
+    },
+    {
+      label: "2타임 이상 대기자",
+      value: buildTwoSlotWaitText(result),
+      tone: result.playersWithTwoSlotWait.length === 0 ? "ok" : "warn",
+    },
+    {
+      label: "필수 페어",
+      value: buildRequiredPairsText(result, requiredPairs),
+      tone: result.unmetRequiredPairs.length === 0 ? "ok" : "warn",
+    },
   ];
 }
 
-function buildPlayerStatsText(result: ScheduleResult): string {
-  if (result.playerSummaries.length === 0) return "없음";
-  return result.playerSummaries
-    .map(
-      (summary) =>
-        `${summary.name} 총 ${summary.totalMatches} / 동성 ${summary.sameGenderDoublesMatches} / 혼성 ${summary.mixedDoublesMatches} / 동성비율 ${Math.round(
-          summary.sameGenderRatio * 100,
-        )}%`,
-    )
-    .join(" · ");
+function calculateAnalysisHeight(playerStatCards: PlayerStatCard[], validationCards: ValidationCard[]): number {
+  const statRows = Math.ceil(playerStatCards.length / 4);
+  const validationLines = Math.max(...validationCards.map((card) => wrapText(card.value, 24).length));
+  const validationCardHeight = Math.max(96, 56 + validationLines * 23);
+  return 34 + statRows * 92 + 30 + validationCardHeight + 44;
+}
+
+function renderAnalysisSections(y: number, playerStatCards: PlayerStatCard[], validationCards: ValidationCard[]): string {
+  const margin = 20;
+  const gap = 10;
+  const contentWidth = 1040;
+  const statColumns = 4;
+  const statCardWidth = Math.floor((contentWidth - gap * (statColumns - 1)) / statColumns);
+  const statCardHeight = 82;
+  const statRows = Math.ceil(playerStatCards.length / statColumns);
+  const statHeaderY = y + 30;
+  const statCardsY = y + 44;
+  const validationY = statCardsY + statRows * 92 + 30;
+  const validationColumns = 3;
+  const validationCardWidth = Math.floor((contentWidth - gap * (validationColumns - 1)) / validationColumns);
+  const validationLines = Math.max(...validationCards.map((card) => wrapText(card.value, 24).length));
+  const validationCardHeight = Math.max(96, 56 + validationLines * 23);
+
+  return `
+    <rect x="0" y="${y}" width="1080" height="${calculateAnalysisHeight(playerStatCards, validationCards)}" fill="#eef3e9"/>
+    <text x="${margin}" y="${statHeaderY}" font-size="22" font-weight="900" fill="#1f2a1e">통계</text>
+    ${playerStatCards
+      .map((card, index) => {
+        const column = index % statColumns;
+        const row = Math.floor(index / statColumns);
+        const x = margin + column * (statCardWidth + gap);
+        const cardY = statCardsY + row * 92;
+        return `
+          <rect x="${x}" y="${cardY}" width="${statCardWidth}" height="${statCardHeight}" rx="8" fill="#ffffff" stroke="#cdd8c6"/>
+          <text x="${x + 14}" y="${cardY + 25}" font-size="21" font-weight="900" fill="#172019">${escapeXml(card.name)}</text>
+          <text x="${x + 14}" y="${cardY + 49}" font-size="18" font-weight="800" fill="#344130">${escapeXml(card.total)}</text>
+          <text x="${x + 118}" y="${cardY + 49}" font-size="18" font-weight="800" fill="#344130">${escapeXml(card.ratio)}</text>
+          <text x="${x + 14}" y="${cardY + 70}" font-size="17" font-weight="700" fill="#5b6756">${escapeXml(card.doubles)}</text>
+        `;
+      })
+      .join("")}
+    <text x="${margin}" y="${validationY}" font-size="22" font-weight="900" fill="#1f2a1e">검증</text>
+    ${validationCards
+      .map((card, index) => {
+        const x = margin + index * (validationCardWidth + gap);
+        const cardY = validationY + 14;
+        const toneFill = card.tone === "ok" ? "#e7f1df" : "#fff4d7";
+        const toneStroke = card.tone === "ok" ? "#b7c8ad" : "#dac176";
+        const lines = wrapText(card.value, 24);
+        return `
+          <rect x="${x}" y="${cardY}" width="${validationCardWidth}" height="${validationCardHeight}" rx="8" fill="#ffffff" stroke="#cdd8c6"/>
+          <rect x="${x + 12}" y="${cardY + 12}" width="26" height="26" rx="13" fill="${toneFill}" stroke="${toneStroke}"/>
+          <text x="${x + 50}" y="${cardY + 32}" font-size="19" font-weight="900" fill="#172019">${escapeXml(card.label)}</text>
+          <text x="${x + 14}" y="${cardY + 62}" font-size="18" font-weight="800" fill="#344130">
+            ${lines.map((line, lineIndex) => `<tspan x="${x + 14}" dy="${lineIndex === 0 ? 0 : 23}">${escapeXml(line)}</tspan>`).join("")}
+          </text>
+        `;
+      })
+      .join("")}
+  `;
 }
 
 function buildRepeatedPairsText(result: ScheduleResult): string {
@@ -165,6 +256,23 @@ function pairNames(pair: RequiredPair, playersById: Map<string, string>): string
 
 function pairKey(a: string, b: string): string {
   return [a, b].sort().join("|");
+}
+
+function wrapText(value: string, maxLength: number): string[] {
+  if (value.length <= maxLength) return [value];
+  const lines: string[] = [];
+  let current = "";
+  for (const token of value.split(/(\s+|,\s*|·\s*)/).filter(Boolean)) {
+    const next = current + token;
+    if (current && next.length > maxLength) {
+      lines.push(current.trim());
+      current = token.trimStart();
+    } else {
+      current = next;
+    }
+  }
+  if (current.trim()) lines.push(current.trim());
+  return lines.length > 0 ? lines : [value];
 }
 
 function escapeXml(value: string): string {

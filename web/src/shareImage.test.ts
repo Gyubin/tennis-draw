@@ -62,10 +62,18 @@ describe("share image", () => {
       { player1Id: "c1", player2Id: "d1" },
     ]);
 
-    expect(svg).toContain("통계 · A1 총 3 / 동성 2 / 혼성 1 / 동성비율 67%");
-    expect(svg).toContain("검증 · 동일 페어 반복 A1/A2 2회");
-    expect(svg).toContain("2타임 이상 대기자 B1");
-    expect(svg).toContain("필수 페어 미충족 1/2: C1/D1");
+    expect(svg).toContain(">통계</text>");
+    expect(svg).toContain(">검증</text>");
+    expect(svg).toContain(">A1</text>");
+    expect(svg).toContain(">총 3경기</text>");
+    expect(svg).toContain(">동성비율 67%</text>");
+    expect(svg).toContain(">동성 2 · 혼성 1</text>");
+    expect(svg).toContain("동일 페어 반복");
+    expect(svg).toContain("A1/A2 2회");
+    expect(svg).toContain("2타임 이상 대기자");
+    expect(svg).toContain(">B1</tspan>");
+    expect(svg).toContain("필수 페어");
+    expect(svg).toContain("미충족 1/2: C1/D1");
   });
 });
 
