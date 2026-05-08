@@ -34,6 +34,8 @@ interface HardPair {
   matchTypes: Set<MatchType>;
 }
 
+type SelectionKey = [number, number[], [number, number, number], [number, number, number], number];
+
 interface MutableStats {
   matches: Map<string, number>;
   sameGender: Map<string, number>;
@@ -80,6 +82,10 @@ export function displayMatchType(match: ScheduledMatch): MatchType | null {
   const [team1Player1, team1Player2] = match.team1;
   const [team2Player1, team2Player2] = match.team2;
   if (!team1Player1 || !team1Player2 || !team2Player1 || !team2Player2) return null;
+
+  const players = [team1Player1, team1Player2, team2Player1, team2Player2];
+  const classifiedMatchType = classifyMatch(players);
+  if (classifiedMatchType === "men_doubles_substitute") return classifiedMatchType;
 
   const team1Genders = new Set([team1Player1.gender, team1Player2.gender]);
   const team2Genders = new Set([team2Player1.gender, team2Player2.gender]);
@@ -286,16 +292,42 @@ function chooseBestMatchesForSlot(args: {
   if (candidates.length === 0) return [];
 
   const regularCandidates = candidates.filter((candidate) => candidate.matchType !== "men_doubles_substitute");
-  if (maxSelectionSize(regularCandidates, args.courts) === maxSelectionSize(candidates, args.courts)) {
-    candidates = regularCandidates;
-    if (candidates.length === 0) return [];
+  const regularMaxSelectionSize = maxSelectionSize(regularCandidates, args.courts);
+  const fullMaxSelectionSize = maxSelectionSize(candidates, args.courts);
+  if (regularCandidates.length > 0 && regularMaxSelectionSize === fullMaxSelectionSize) {
+    const regularSelection = chooseBestSelectionForSlot(regularCandidates, args);
+    const fullSelection = chooseBestSelectionForSlot(candidates, args);
+    if (
+      fullSelection.matches.some((candidate) => candidate.matchType === "men_doubles_substitute") &&
+      preservesLowestMatchPlayers(fullSelection.matches, regularSelection.matches, args.stats, args.availablePlayers) &&
+      compareSelectionBalanceAndRest(fullSelection.key, regularSelection.key) > 0
+    ) {
+      return fullSelection.matches;
+    }
+    return regularSelection.matches;
   }
+  return chooseBestSelectionForSlot(candidates, args).matches;
+}
 
+function chooseBestSelectionForSlot(
+  candidates: MatchCandidate[],
+  args: {
+    availablePlayers: Player[];
+    courts: number;
+    stats: MutableStats;
+    requiredPairKeys: Set<string>;
+    unpairedPlayerIds: Set<string>;
+    earliestStartPlayerIds: Set<string>;
+    forbiddenWaitingPair: string | null;
+    preferEarlyLeave: boolean;
+    preferWaitingPair: boolean;
+  },
+): { matches: MatchCandidate[]; key: SelectionKey } {
   let bestSelection: MatchCandidate[] = [];
-  let bestKey: [number, number[], [number, number, number], [number, number, number], number] | null = null;
+  let bestKey: SelectionKey | null = null;
 
   const backtrack = (startIndex: number, chosen: MatchCandidate[], usedPlayerIds: Set<string>) => {
-    const key: [number, number[], [number, number, number], [number, number, number], number] = [
+    const key: SelectionKey = [
       chosen.length,
       buildBalanceSignature(chosen, args.stats),
       buildRestSignature(chosen, args.stats, args.availablePlayers),
@@ -329,7 +361,21 @@ function chooseBestMatchesForSlot(args: {
   };
 
   backtrack(0, [], new Set());
-  return bestSelection;
+  return { matches: bestSelection, key: bestKey ?? [0, buildBalanceSignature([], args.stats), buildRestSignature([], args.stats, args.availablePlayers), [0, 0, 0], 0] };
+}
+
+function preservesLowestMatchPlayers(
+  candidateSelection: MatchCandidate[],
+  regularSelection: MatchCandidate[],
+  stats: MutableStats,
+  availablePlayers: Player[],
+): boolean {
+  const lowestMatchCount = Math.min(...availablePlayers.map((player) => getCount(stats.matches, player.playerId)));
+  const candidatePlayedIds = new Set(candidateSelection.flatMap((candidate) => Array.from(candidate.playerIds)));
+  const regularPlayedIds = new Set(regularSelection.flatMap((candidate) => Array.from(candidate.playerIds)));
+  return availablePlayers
+    .filter((player) => getCount(stats.matches, player.playerId) === lowestMatchCount)
+    .every((player) => !regularPlayedIds.has(player.playerId) || candidatePlayedIds.has(player.playerId));
 }
 
 function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
@@ -892,10 +938,7 @@ function combinations<T>(items: T[], size: number): T[][] {
   return result;
 }
 
-function compareSelectionKey(
-  a: [number, number[], [number, number, number], [number, number, number], number],
-  b: [number, number[], [number, number, number], [number, number, number], number],
-): number {
+function compareSelectionKey(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
   const balance = compareNumberArrays(a[1], b[1]);
   if (balance !== 0) return balance;
@@ -904,6 +947,13 @@ function compareSelectionKey(
   const low = compareNumberArrays(a[3], b[3]);
   if (low !== 0) return low;
   return a[4] - b[4];
+}
+
+function compareSelectionBalanceAndRest(a: SelectionKey, b: SelectionKey): number {
+  if (a[0] !== b[0]) return a[0] - b[0];
+  const balance = compareNumberArrays(a[1], b[1]);
+  if (balance !== 0) return balance;
+  return compareNumberArrays(a[2], b[2]);
 }
 
 function compareNumberArrays(a: readonly number[], b: readonly number[]): number {

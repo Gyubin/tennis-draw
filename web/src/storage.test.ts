@@ -179,6 +179,27 @@ describe("storage", () => {
     expect(restored.clubs[0].currentWeek.guestParticipants).toEqual([]);
   });
 
+  it("adds empty male-slot fill settings to older saved clubs", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    const legacyClub = {
+      ...state.clubs[0],
+      currentWeek: {
+        weekLabel: state.clubs[0].currentWeek.weekLabel,
+        participantIds: state.clubs[0].currentWeek.participantIds,
+        guestParticipants: state.clubs[0].currentWeek.guestParticipants,
+        requiredPairs: state.clubs[0].currentWeek.requiredPairs,
+        lastSchedule: state.clubs[0].currentWeek.lastSchedule,
+        activeHistoryId: state.clubs[0].currentWeek.activeHistoryId,
+      },
+    };
+    storage.setItem("tennis-draw:v2", JSON.stringify({ ...state, clubs: [legacyClub] }));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.maleSlotFillPlayerIds).toEqual([]);
+  });
+
   it("preserves current week guest participants and pairs in v2 state", () => {
     const storage = memoryStorage();
     const state = defaultState();
@@ -193,6 +214,20 @@ describe("storage", () => {
     expect(restored.clubs[0].currentWeek.guestParticipants).toEqual([guest]);
     expect(restored.clubs[0].currentWeek.participantIds).toEqual(["m1", guest.playerId]);
     expect(restored.clubs[0].currentWeek.requiredPairs).toEqual([{ player1Id: "m1", player2Id: guest.playerId, mode: "soft" }]);
+  });
+
+  it("keeps only active women in male-slot fill settings", () => {
+    const storage = memoryStorage();
+    const state = defaultState();
+    const guest = player("guest-1", "게스트 1", "F");
+    state.clubs[0].currentWeek.guestParticipants = [guest];
+    state.clubs[0].currentWeek.participantIds = ["m1", "f1", guest.playerId];
+    state.clubs[0].currentWeek.maleSlotFillPlayerIds = ["m1", "f1", "f2", guest.playerId, "missing"];
+    storage.setItem("tennis-draw:v2", JSON.stringify(state));
+
+    const restored = loadState(storage);
+
+    expect(restored.clubs[0].currentWeek.maleSlotFillPlayerIds).toEqual(["f1", guest.playerId]);
   });
 
   it("removes participant ids and pairs for missing guests during normalization", () => {

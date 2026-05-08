@@ -169,6 +169,70 @@ describe("scheduleMatches", () => {
     expect(result.matches[0].matchType).toBe("men_doubles_substitute");
   });
 
+  it("uses substitute matches when they improve match-count balance", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "M1", "M", "18:00", "21:00"),
+        player("m2", "M2", "M", "18:00", "21:00"),
+        player("m3", "M3", "M", "18:00", "21:00"),
+        player("m4", "M4", "M", "18:00", "21:00"),
+        player("m5", "M5", "M", "18:00", "21:00"),
+        player("m6", "M6", "M", "18:00", "21:00"),
+        player("m7", "M7", "M", "18:00", "21:00"),
+        player("f1", "F1", "F", "18:00", "21:00", true),
+        player("f2", "F2", "F", "18:00", "21:00", true),
+        player("f3", "F3", "F", "18:00", "21:00", true),
+      ],
+      [],
+      30,
+      2,
+    );
+    const totals = result.playerSummaries.map((summary) => summary.totalMatches);
+
+    expect(result.matches.some((match) => match.matchType === "men_doubles_substitute")).toBe(true);
+    expect(Math.max(...totals) - Math.min(...totals)).toBeLessThanOrEqual(1);
+  });
+
+  it("keeps regular matches when substitute matches do not improve balance", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "M1", "M", "18:00", "18:30"),
+        player("m2", "M2", "M", "18:00", "18:30"),
+        player("m3", "M3", "M", "18:00", "18:30"),
+        player("m4", "M4", "M", "18:00", "18:30"),
+        player("f1", "F1", "F", "18:00", "18:30", true),
+        player("f2", "F2", "F", "18:00", "18:30", true),
+        player("f3", "F3", "F", "18:00", "18:30", true),
+        player("f4", "F4", "F", "18:00", "18:30", true),
+      ],
+      [],
+      30,
+      2,
+    );
+
+    expect(result.matches.map((match) => match.matchType).sort()).toEqual(["men_doubles", "women_doubles"]);
+  });
+
+  it("counts substitute matches as same-gender doubles", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "M1", "M", "18:00", "18:30"),
+        player("m2", "M2", "M", "18:00", "18:30"),
+        player("m3", "M3", "M", "18:00", "18:30"),
+        player("f1", "F1", "F", "18:00", "18:30", true),
+      ],
+      [],
+      30,
+      1,
+    );
+
+    expect(result.playerSummaries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ playerId: "f1", totalMatches: 1, sameGenderDoublesMatches: 1, mixedDoublesMatches: 0 }),
+      ]),
+    );
+  });
+
   it("summarizes per-player match statistics", () => {
     const players = [
       player("m1", "M1", "M", "18:00", "19:00"),
@@ -269,6 +333,23 @@ describe("scheduleMatches", () => {
 
     expect(validation.errors).toEqual([]);
     expect(validation.warnings).not.toContain("성비가 어긋납니다.");
+  });
+
+  it("validates manual substitute matches without gender-ratio warnings", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("m3", "M3", "M", "18:00", "18:30"),
+      player("f1", "F1", "F", "18:00", "18:30", true),
+    ];
+    const matches: ScheduledMatch[] = [match("18:00", 1, [players[3], players[0]], [players[1], players[2]], "men_doubles")];
+
+    const validation = validateSchedule(matches, players, []);
+
+    expect(validation.errors).toEqual([]);
+    expect(validation.warnings).not.toContain("성비가 어긋납니다.");
+    expect(validation.summary.matches[0].matchType).toBe("men_doubles_substitute");
+    expect(displayMatchTypeLabel(validation.summary.matches[0])).toBe("남복(대체)");
   });
 });
 

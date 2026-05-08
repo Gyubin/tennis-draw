@@ -471,9 +471,25 @@ function renderParticipantRow(player: Player): string {
         <span aria-hidden="true">-</span>
         ${renderTimeSelect("end", player.availableEnd, `data-player-time="${player.playerId}" data-time-field="end" aria-label="${escapeHtml(`${player.name} 종료 시간`)}"`, timeRange)}
       </div>
+      ${renderMaleSlotFillControl(player)}
       <button type="button" data-action="remove-participant" data-player-id="${player.playerId}">${guest ? "삭제" : "불참"}</button>
       ${invalid ? `<small>끝 시간이 시작보다 늦어야 합니다.</small>` : ""}
     </div>
+  `;
+}
+
+function renderMaleSlotFillControl(player: Player): string {
+  if (player.gender !== "F") return `<span class="participant-row__male-fill participant-row__male-fill--empty" aria-hidden="true"></span>`;
+  const checked = activeClub().currentWeek.maleSlotFillPlayerIds.includes(player.playerId);
+  return `
+    <label class="check participant-row__male-fill">
+      <input
+        type="checkbox"
+        data-male-slot-fill="${player.playerId}"
+        ${checked ? "checked" : ""}
+      />
+      남복 가능
+    </label>
   `;
 }
 
@@ -751,6 +767,9 @@ function bindEvents(): void {
   });
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-player-time]").forEach((input) => {
     input.addEventListener("change", () => updateParticipantTime(input));
+  });
+  app.querySelectorAll<HTMLInputElement>("[data-male-slot-fill]").forEach((input) => {
+    input.addEventListener("change", () => updateMaleSlotFill(input));
   });
   app.querySelectorAll<HTMLInputElement>("[data-history-name]").forEach((input) => {
     input.addEventListener("change", () => renameHistoryEntry(input));
@@ -1235,6 +1254,7 @@ function updatePlayerFromForm(form: HTMLFormElement): void {
   player.name = String(data.get("name") || player.name).trim() || player.name;
   player.gender = String(data.get("gender")) === "F" ? "F" : "M";
   player.canFillMaleSlot = false;
+  if (player.gender !== "F") removeMaleSlotFillPlayer(player.playerId);
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -1264,6 +1284,25 @@ function updateParticipantTime(input: HTMLInputElement | HTMLSelectElement): voi
   commit();
 }
 
+function updateMaleSlotFill(input: HTMLInputElement): void {
+  const player = findCurrentWeekPlayer(input.dataset.maleSlotFill ?? "");
+  if (!player || player.gender !== "F") return;
+  if (input.checked) {
+    if (!activeClub().currentWeek.maleSlotFillPlayerIds.includes(player.playerId)) {
+      activeClub().currentWeek.maleSlotFillPlayerIds.push(player.playerId);
+    }
+  } else {
+    removeMaleSlotFillPlayer(player.playerId);
+  }
+  activeClub().currentWeek.lastSchedule = null;
+  activeClub().currentWeek.activeHistoryId = null;
+  commit();
+}
+
+function removeMaleSlotFillPlayer(playerId: string): void {
+  activeClub().currentWeek.maleSlotFillPlayerIds = activeClub().currentWeek.maleSlotFillPlayerIds.filter((id) => id !== playerId);
+}
+
 function clampTimeToCurrentSettings(minutes: number): number {
   return Math.min(activeClub().settings.endTime, Math.max(activeClub().settings.startTime, minutes));
 }
@@ -1277,6 +1316,7 @@ function updateGuestParticipant(input: HTMLInputElement | HTMLSelectElement): vo
   if (input.dataset.guestField === "gender") {
     player.gender = input.value === "F" ? "F" : "M";
     player.canFillMaleSlot = false;
+    if (player.gender !== "F") removeMaleSlotFillPlayer(player.playerId);
   }
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
@@ -1323,6 +1363,7 @@ function deletePlayer(playerId: string): void {
   activeClub().roster = activeClub().roster.filter((player) => player.playerId !== playerId);
   activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
   activeClub().currentWeek.requiredPairs = activeClub().currentWeek.requiredPairs.filter((pair) => pair.player1Id !== playerId && pair.player2Id !== playerId);
+  removeMaleSlotFillPlayer(playerId);
   activeClub().currentWeek.lastSchedule = null;
   activeClub().currentWeek.activeHistoryId = null;
   commit();
@@ -1344,6 +1385,7 @@ function addParticipant(playerId: string): void {
 
 function removeParticipant(playerId: string): void {
   activeClub().currentWeek.participantIds = activeClub().currentWeek.participantIds.filter((id) => id !== playerId);
+  removeMaleSlotFillPlayer(playerId);
   if (isGuestParticipant(playerId)) {
     activeClub().currentWeek.guestParticipants = activeClub().currentWeek.guestParticipants.filter((player) => player.playerId !== playerId);
     activeClub().currentWeek.requiredPairs = activeClub().currentWeek.requiredPairs.filter((pair) => pair.player1Id !== playerId && pair.player2Id !== playerId);
@@ -1393,7 +1435,11 @@ function createScheduleFromCurrentInputs(options?: { shuffleSeed?: number }): Sc
     render();
     return null;
   }
-  const schedulePlayers = players.map((player) => ({ ...player, canFillMaleSlot: false }));
+  const maleSlotFillPlayerIds = new Set(activeClub().currentWeek.maleSlotFillPlayerIds);
+  const schedulePlayers = players.map((player) => ({
+    ...player,
+    canFillMaleSlot: player.gender === "F" && maleSlotFillPlayerIds.has(player.playerId),
+  }));
   return scheduleMatches(
     schedulePlayers,
     activeClub().currentWeek.requiredPairs,
@@ -1414,6 +1460,7 @@ function newWeek(): void {
     weekLabel: buildCurrentWeekLabel(),
     participantIds: activeClub().currentWeek.participantIds.filter((id) => activeClub().roster.some((player) => player.playerId === id)),
     guestParticipants: [],
+    maleSlotFillPlayerIds: [],
     requiredPairs: [],
     lastSchedule: null,
     activeHistoryId: null,

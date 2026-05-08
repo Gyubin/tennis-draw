@@ -36,6 +36,7 @@ export function defaultClub(clubId: string, name: string, roster: Player[] = [])
       weekLabel: buildCurrentWeekLabel(),
       participantIds: roster.map((player) => player.playerId),
       guestParticipants: [],
+      maleSlotFillPlayerIds: [],
       requiredPairs: [],
       lastSchedule: null,
       activeHistoryId: null,
@@ -115,7 +116,15 @@ function normalizeClub(club: ClubState): ClubState {
   const guestParticipants = Array.isArray(currentWeek.guestParticipants)
     ? currentWeek.guestParticipants.map(normalizePlayer)
     : [];
-  const eligiblePlayerIds = new Set([...roster, ...guestParticipants].map((player) => player.playerId));
+  const eligiblePlayers = [...roster, ...guestParticipants];
+  const eligiblePlayerIds = new Set(eligiblePlayers.map((player) => player.playerId));
+  const participantIds = Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => eligiblePlayerIds.has(id)) : [];
+  const participantIdSet = new Set(participantIds);
+  const maleSlotFillPlayerIds = new Set(
+    eligiblePlayers
+      .filter((player) => player.gender === "F" && participantIdSet.has(player.playerId))
+      .map((player) => player.playerId),
+  );
   const scheduleHistory = Array.isArray(club.scheduleHistory) ? club.scheduleHistory.map(normalizeHistoryEntry) : [];
   const activeHistoryId = scheduleHistory.some((entry) => entry.historyId === currentWeek.activeHistoryId)
     ? currentWeek.activeHistoryId
@@ -128,8 +137,11 @@ function normalizeClub(club: ClubState): ClubState {
     currentWeek: {
       ...currentWeek,
       weekLabel: normalizeDateLabel(currentWeek.weekLabel),
-      participantIds: Array.isArray(currentWeek.participantIds) ? currentWeek.participantIds.filter((id) => eligiblePlayerIds.has(id)) : [],
+      participantIds,
       guestParticipants,
+      maleSlotFillPlayerIds: Array.isArray(currentWeek.maleSlotFillPlayerIds)
+        ? currentWeek.maleSlotFillPlayerIds.filter((id) => maleSlotFillPlayerIds.has(id))
+        : [],
       requiredPairs: Array.isArray(currentWeek.requiredPairs)
         ? currentWeek.requiredPairs
             .filter((pair) => eligiblePlayerIds.has(pair.player1Id) && eligiblePlayerIds.has(pair.player2Id))

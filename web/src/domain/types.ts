@@ -62,6 +62,7 @@ export interface WeekState {
   weekLabel: string;
   participantIds: string[];
   guestParticipants: Player[];
+  maleSlotFillPlayerIds: string[];
   requiredPairs: RequiredPair[];
   lastSchedule: ScheduleResult | null;
   activeHistoryId: string | null;

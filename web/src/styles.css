@@ -502,7 +502,7 @@ button:active {
 
 .participant-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(192px, auto) 54px;
+  grid-template-columns: minmax(120px, 1fr) minmax(192px, auto) minmax(82px, auto) 54px;
   gap: 6px;
   align-items: center;
   padding: 6px;
@@ -512,7 +512,7 @@ button:active {
 }
 
 .participant-row--guest {
-  grid-template-columns: minmax(100px, 1fr) 68px minmax(192px, auto) 54px;
+  grid-template-columns: minmax(100px, 1fr) 68px minmax(192px, auto) minmax(82px, auto) 54px;
 }
 
 .inactive-participant-row {
@@ -538,6 +538,17 @@ button:active {
   color: #667460;
   font-size: 13px;
   font-weight: 800;
+}
+
+.participant-row__male-fill {
+  min-height: 34px;
+  justify-content: flex-start;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.participant-row__male-fill--empty {
+  display: block;
 }
 
 .participant-row input,
@@ -1639,6 +1650,15 @@ select,
     grid-column: 1 / -1;
     grid-row: 2;
     grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  }
+
+  .participant-row__male-fill {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .participant-row__male-fill--empty {
+    display: none;
   }
 
   .participant-row button[data-action="remove-participant"] {
