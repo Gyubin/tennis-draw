@@ -23,6 +23,18 @@ describe("share image", () => {
     expect(svg).toContain("17:00-17:30");
     expect(svg).toContain("19:30-20:00");
     expect(svg).toContain("A1/A2 vs B1/B2");
+    expect(svg).toContain("대기: 없음");
+  });
+
+  it("renders waiting players for each time slot", () => {
+    const result = sampleResult();
+    result.players.push(player("e1", "E1", "M"));
+
+    const rows = buildShareRows(result);
+    const svg = buildShareSvg(result, "테니스 대진표");
+
+    expect(rows[0].waiting).toEqual(["E1"]);
+    expect(svg).toContain("대기: E1");
   });
 
   it("renders empty slots without a match type label", () => {

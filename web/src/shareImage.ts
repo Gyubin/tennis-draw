@@ -1,9 +1,10 @@
-import { displayMatchTypeLabel } from "./domain/scheduler";
+import { displayMatchTypeLabel, filledPlayers } from "./domain/scheduler";
 import { formatMinutes } from "./domain/time";
 import type { Player, RequiredPair, ScheduleResult, ScheduledMatch } from "./domain/types";
 
 export interface ShareRow {
   time: string;
+  waiting: string[];
   courts: Array<{
     court: number;
     text: string;
@@ -21,6 +22,7 @@ export function buildShareRows(result: ScheduleResult): ShareRow[] {
     .sort(([a], [b]) => a - b)
     .map(([slotStart, matches]) => ({
       time: `${formatMinutes(slotStart)}-${formatMinutes(matches[0].slotEnd)}`,
+      waiting: waitingPlayersForSlot(result.players, matches),
       courts: [...matches]
         .sort((a, b) => a.court - b.court)
         .map((match) => ({
@@ -38,16 +40,26 @@ export function buildShareSvg(result: ScheduleResult, title: string, requiredPai
   const maxCourts = Math.max(1, ...rows.map((row) => row.courts.length));
   const width = 1080;
   const titleHeight = 88;
-  const rowHeight = 104;
+  const matchAreaHeight = 104;
+  const rowMetrics = rows.map((row) => {
+    const waitingLines = wrapText(`대기: ${row.waiting.length > 0 ? row.waiting.join(", ") : "없음"}`, 54);
+    return {
+      waitingLines,
+      height: matchAreaHeight + 22 + waitingLines.length * 24,
+    };
+  });
   const footerHeight = calculateAnalysisHeight(playerStatCards, validationCards);
   const timeWidth = 150;
   const courtWidth = Math.floor((width - timeWidth - 40) / maxCourts);
-  const height = titleHeight + rows.length * rowHeight + footerHeight;
-  const analysisY = titleHeight + rows.length * rowHeight;
+  const scheduleHeight = rowMetrics.reduce((total, metric) => total + metric.height, 0);
+  const height = titleHeight + scheduleHeight + footerHeight;
+  const analysisY = titleHeight + scheduleHeight;
 
   const cells = rows
     .map((row, rowIndex) => {
-      const y = titleHeight + rowIndex * rowHeight;
+      const y = titleHeight + rowMetrics.slice(0, rowIndex).reduce((total, metric) => total + metric.height, 0);
+      const rowHeight = rowMetrics[rowIndex].height;
+      const waitingLines = rowMetrics[rowIndex].waitingLines;
       const courtCells = Array.from({ length: maxCourts }, (_, courtIndex) => {
         const court = row.courts[courtIndex];
         const x = 20 + timeWidth + courtIndex * courtWidth;
@@ -62,6 +74,10 @@ export function buildShareSvg(result: ScheduleResult, title: string, requiredPai
         <rect x="20" y="${y}" width="${timeWidth}" height="${rowHeight}" fill="#e6efe0" stroke="#293126" stroke-width="2"/>
         <text x="95" y="${y + 61}" text-anchor="middle" font-size="27" font-weight="900" fill="#111811">${escapeXml(row.time)}</text>
         ${courtCells}
+        <line x1="20" y1="${y + matchAreaHeight}" x2="${width - 20}" y2="${y + matchAreaHeight}" stroke="#c8d4bf" stroke-width="2"/>
+        <text x="${20 + timeWidth + 14}" y="${y + matchAreaHeight + 28}" font-size="21" font-weight="800" fill="#3f4a3a">
+          ${waitingLines.map((line, lineIndex) => `<tspan x="${20 + timeWidth + 14}" dy="${lineIndex === 0 ? 0 : 24}">${escapeXml(line)}</tspan>`).join("")}
+        </text>
       `;
     })
     .join("");
@@ -115,6 +131,11 @@ function compactNames(value: string): string {
 
 function slotName(player: ScheduledMatch["team1"][number]): string {
   return player?.name ?? "빈칸";
+}
+
+function waitingPlayersForSlot(players: Player[], matches: ScheduledMatch[]): string[] {
+  const playedIds = new Set(matches.flatMap((match) => filledPlayers(match).map((player) => player.playerId)));
+  return players.filter((player) => !playedIds.has(player.playerId)).map((player) => player.name);
 }
 
 interface PlayerStatCard {
