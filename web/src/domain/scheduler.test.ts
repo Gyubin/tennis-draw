@@ -114,6 +114,43 @@ describe("scheduleMatches", () => {
     expect(result.unmetRequiredPairs).toEqual([]);
   });
 
+  it("allows one same-gender hard-pair member to play mixed while the other plays same-gender doubles", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("m3", "M3", "M", "18:00", "18:30"),
+      player("m4", "M4", "M", "18:00", "18:30"),
+      player("m5", "M5", "M", "18:00", "18:30"),
+      player("m6", "M6", "M", "18:00", "18:30"),
+      player("f1", "F1", "F", "18:00", "18:30"),
+      player("f2", "F2", "F", "18:00", "18:30"),
+    ];
+    const requiredPairs: RequiredPair[] = [{ player1Id: "m1", player2Id: "m2", mode: "hard" }];
+    const matches: ScheduledMatch[] = [
+      match("18:00", 1, [players[0], players[6]], [players[2], players[7]], "mixed_doubles"),
+      match("18:00", 2, [players[1], players[3]], [players[4], players[5]], "men_doubles"),
+    ];
+
+    const result = summarizeManualSchedule(matches, players, requiredPairs);
+
+    expect(result.unmetRequiredPairs).toEqual([]);
+  });
+
+  it("marks a hard same-gender pair unmet when both members are opponents in the same same-gender match", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "18:30"),
+      player("m2", "M2", "M", "18:00", "18:30"),
+      player("m3", "M3", "M", "18:00", "18:30"),
+      player("m4", "M4", "M", "18:00", "18:30"),
+    ];
+    const requiredPairs: RequiredPair[] = [{ player1Id: "m1", player2Id: "m2", mode: "hard" }];
+    const matches: ScheduledMatch[] = [match("18:00", 1, [players[0], players[2]], [players[1], players[3]], "men_doubles")];
+
+    const result = summarizeManualSchedule(matches, players, requiredPairs);
+
+    expect(result.unmetRequiredPairs).toEqual(requiredPairs);
+  });
+
   it("relaxes an impossible hard pair without changing the generated match count", () => {
     const players = [
       player("m1", "M1", "M", "18:00", "18:30"),
@@ -446,7 +483,7 @@ function matchHasNoPairMemberOrTeam(match: ScheduledMatch, player1Id: string, pl
     (team) => team.filter((player) => player?.playerId === player1Id || player?.playerId === player2Id).length,
   );
   const totalCount = teamCounts[0] + teamCounts[1];
-  return totalCount === 0 || teamCounts.includes(2);
+  return totalCount < 2 || teamCounts.includes(2);
 }
 
 function scheduleSignature(matches: ScheduledMatch[]): string[] {

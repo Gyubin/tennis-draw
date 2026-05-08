@@ -409,9 +409,7 @@ function buildTargetRangeSignature(selectedMatches: MatchCandidate[], stats: Mut
 }
 
 function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
-  return hardPairs.some(
-    (pair) => pair.matchTypes.has(candidate.matchType) && (candidate.playerIds.has(pair.player1Id) || candidate.playerIds.has(pair.player2Id)),
-  );
+  return !isCandidateHardPairCompliant(candidate, hardPairs);
 }
 
 function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
@@ -420,7 +418,7 @@ function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: Hard
     const team1Count = countPlayersInTeam(candidate.teams[0], pair);
     const team2Count = countPlayersInTeam(candidate.teams[1], pair);
     const totalCount = team1Count + team2Count;
-    return totalCount === 0 || team1Count === 2 || team2Count === 2;
+    return totalCount < 2 || team1Count === 2 || team2Count === 2;
   });
 }
 
@@ -696,7 +694,7 @@ function buildUnmetRequiredPairs(
       const team1Count = countPlayersInScheduleTeam(match.team1, pair);
       const team2Count = countPlayersInScheduleTeam(match.team2, pair);
       const totalCount = team1Count + team2Count;
-      if (totalCount > 0 && team1Count !== 2 && team2Count !== 2) {
+      if (totalCount === 2 && team1Count !== 2 && team2Count !== 2) {
         hardPairViolations.add(pair.key);
       }
     }
