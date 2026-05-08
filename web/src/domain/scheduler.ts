@@ -34,7 +34,16 @@ interface HardPair {
   matchTypes: Set<MatchType>;
 }
 
-type SelectionKey = [number, [number, number, number], number[], [number, number, number], [number, number, number], number];
+type SelectionKey = [
+  number,
+  [number, number, number],
+  [number, number, number],
+  number[],
+  [number, number, number],
+  [number, number, number],
+  [number, number, number],
+  number,
+];
 
 interface MutableStats {
   matches: Map<string, number>;
@@ -328,6 +337,7 @@ function chooseBestSelectionForSlot(
     forbiddenWaitingPair: string | null;
     preferEarlyLeave: boolean;
     preferWaitingPair: boolean;
+    hardPairs: HardPair[];
   },
 ): { matches: MatchCandidate[]; key: SelectionKey } {
   let bestSelection: MatchCandidate[] = [];
@@ -336,9 +346,11 @@ function chooseBestSelectionForSlot(
   const backtrack = (startIndex: number, chosen: MatchCandidate[], usedPlayerIds: Set<string>) => {
     const key: SelectionKey = [
       chosen.length,
+      buildHardPairSignature(chosen, args.availablePlayers, args.hardPairs),
       buildTargetRangeSignature(chosen, args.stats, args.targetFloor, args.targetMax),
       buildBalanceSignature(chosen, args.stats),
       buildRestSignature(chosen, args.stats, args.availablePlayers),
+      buildHardPairCohesionSignature(chosen, args.availablePlayers, args.hardPairs),
       buildLowPriorityPreferenceSignature(
         chosen,
         args.availablePlayers,
@@ -373,9 +385,11 @@ function chooseBestSelectionForSlot(
     matches: bestSelection,
     key: bestKey ?? [
       0,
+      buildHardPairSignature([], args.availablePlayers, args.hardPairs),
       buildTargetRangeSignature([], args.stats, args.targetFloor, args.targetMax),
       buildBalanceSignature([], args.stats),
       buildRestSignature([], args.stats, args.availablePlayers),
+      buildHardPairCohesionSignature([], args.availablePlayers, args.hardPairs),
       [0, 0, 0],
       0,
     ],
@@ -408,6 +422,54 @@ function buildTargetRangeSignature(selectedMatches: MatchCandidate[], stats: Mut
   return [-belowFloor, -aboveMax, -range];
 }
 
+function buildHardPairSignature(selectedMatches: MatchCandidate[], availablePlayers: Player[], hardPairs: HardPair[]): [number, number, number] {
+  if (hardPairs.length === 0) return [0, 0, 0];
+
+  const availablePlayerIds = new Set(availablePlayers.map((player) => player.playerId));
+  let targetTypeViolations = 0;
+
+  for (const pair of hardPairs) {
+    const player1Available = availablePlayerIds.has(pair.player1Id);
+    const player2Available = availablePlayerIds.has(pair.player2Id);
+    if (!player1Available || !player2Available) continue;
+
+    for (const candidate of selectedMatches) {
+      if (!pair.matchTypes.has(candidate.matchType)) continue;
+      const team1Count = countPlayersInTeam(candidate.teams[0], pair);
+      const team2Count = countPlayersInTeam(candidate.teams[1], pair);
+      const totalCount = team1Count + team2Count;
+      if (totalCount > 0 && team1Count !== 2 && team2Count !== 2) targetTypeViolations += 1;
+    }
+  }
+
+  return [-targetTypeViolations, 0, 0];
+}
+
+function buildHardPairCohesionSignature(selectedMatches: MatchCandidate[], availablePlayers: Player[], hardPairs: HardPair[]): [number, number, number] {
+  if (hardPairs.length === 0) return [0, 0, 0];
+
+  const availablePlayerIds = new Set(availablePlayers.map((player) => player.playerId));
+  let splitPairs = 0;
+  let togetherPairs = 0;
+
+  for (const pair of hardPairs) {
+    const player1Available = availablePlayerIds.has(pair.player1Id);
+    const player2Available = availablePlayerIds.has(pair.player2Id);
+    if (!player1Available || !player2Available) continue;
+
+    const player1Match = selectedMatches.find((candidate) => candidate.playerIds.has(pair.player1Id));
+    const player2Match = selectedMatches.find((candidate) => candidate.playerIds.has(pair.player2Id));
+
+    if (player1Match && player1Match === player2Match) {
+      togetherPairs += 1;
+    } else if (player1Match || player2Match) {
+      splitPairs += 1;
+    }
+  }
+
+  return [-splitPairs, togetherPairs, 0];
+}
+
 function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
   return !isCandidateHardPairCompliant(candidate, hardPairs);
 }
@@ -418,7 +480,7 @@ function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: Hard
     const team1Count = countPlayersInTeam(candidate.teams[0], pair);
     const team2Count = countPlayersInTeam(candidate.teams[1], pair);
     const totalCount = team1Count + team2Count;
-    return totalCount < 2 || team1Count === 2 || team2Count === 2;
+    return totalCount === 0 || team1Count === 2 || team2Count === 2;
   });
 }
 
@@ -694,7 +756,7 @@ function buildUnmetRequiredPairs(
       const team1Count = countPlayersInScheduleTeam(match.team1, pair);
       const team2Count = countPlayersInScheduleTeam(match.team2, pair);
       const totalCount = team1Count + team2Count;
-      if (totalCount === 2 && team1Count !== 2 && team2Count !== 2) {
+      if (totalCount > 0 && team1Count !== 2 && team2Count !== 2) {
         hardPairViolations.add(pair.key);
       }
     }
@@ -969,24 +1031,28 @@ function combinations<T>(items: T[], size: number): T[][] {
 
 function compareSelectionKey(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  const targetRange = compareNumberArrays(a[1], b[1]);
+  const hardPairs = compareNumberArrays(a[1], b[1]);
+  if (hardPairs !== 0) return hardPairs;
+  const targetRange = compareNumberArrays(a[2], b[2]);
   if (targetRange !== 0) return targetRange;
-  const balance = compareNumberArrays(a[2], b[2]);
+  const balance = compareNumberArrays(a[3], b[3]);
   if (balance !== 0) return balance;
-  const rest = compareNumberArrays(a[3], b[3]);
+  const rest = compareNumberArrays(a[4], b[4]);
   if (rest !== 0) return rest;
-  const low = compareNumberArrays(a[4], b[4]);
+  const hardPairCohesion = compareNumberArrays(a[5], b[5]);
+  if (hardPairCohesion !== 0) return hardPairCohesion;
+  const low = compareNumberArrays(a[6], b[6]);
   if (low !== 0) return low;
-  return a[5] - b[5];
+  return a[7] - b[7];
 }
 
 function compareSelectionBalanceAndRest(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  const targetRange = compareNumberArrays(a[1], b[1]);
+  const targetRange = compareNumberArrays(a[2], b[2]);
   if (targetRange !== 0) return targetRange;
-  const balance = compareNumberArrays(a[2], b[2]);
+  const balance = compareNumberArrays(a[3], b[3]);
   if (balance !== 0) return balance;
-  return compareNumberArrays(a[3], b[3]);
+  return compareNumberArrays(a[4], b[4]);
 }
 
 function compareNumberArrays(a: readonly number[], b: readonly number[]): number {

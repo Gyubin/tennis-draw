@@ -105,16 +105,13 @@ describe("scheduleMatches", () => {
     const result = scheduleMatches(players, [{ player1Id: "m1", player2Id: "f1", mode: "hard" }], 30, 1);
 
     expect(matchTypeCounts(result.matches)).toEqual(matchTypeCounts(baseline.matches));
-    expect(nonTargetMatchSignature(result.matches, new Set(["mixed_doubles"]))).toEqual(
-      nonTargetMatchSignature(baseline.matches, new Set(["mixed_doubles"])),
-    );
     for (const match of result.matches.filter((item) => item.matchType === "mixed_doubles")) {
       expect(matchHasNoPairMemberOrTeam(match, "m1", "f1")).toBe(true);
     }
     expect(result.unmetRequiredPairs).toEqual([]);
   });
 
-  it("allows one same-gender hard-pair member to play mixed while the other plays same-gender doubles", () => {
+  it("marks a same-gender hard pair unmet when one member plays same-gender doubles without the other", () => {
     const players = [
       player("m1", "M1", "M", "18:00", "18:30"),
       player("m2", "M2", "M", "18:00", "18:30"),
@@ -133,7 +130,37 @@ describe("scheduleMatches", () => {
 
     const result = summarizeManualSchedule(matches, players, requiredPairs);
 
+    expect(result.unmetRequiredPairs).toEqual(requiredPairs);
+  });
+
+  it("keeps a hard same-gender pair from splitting across target and mixed matches in the same slot", () => {
+    const players = [
+      player("m1", "M1", "M", "18:00", "21:00"),
+      player("m2", "M2", "M", "18:00", "21:00"),
+      player("m3", "M3", "M", "18:00", "21:00"),
+      player("m4", "M4", "M", "18:00", "21:00"),
+      player("m5", "M5", "M", "18:00", "21:00"),
+      player("m6", "M6", "M", "18:00", "21:00"),
+      player("f1", "F1", "F", "18:00", "21:00"),
+      player("f2", "F2", "F", "18:00", "21:00"),
+    ];
+    const result = scheduleMatches(players, [{ player1Id: "m1", player2Id: "m2", mode: "hard" }], 30, 2, { shuffleSeed: 1 });
+
+    expect(result.matches).toHaveLength(12);
     expect(result.unmetRequiredPairs).toEqual([]);
+    for (const match of result.matches.filter((item) => item.matchType === "men_doubles" || item.matchType === "men_doubles_substitute")) {
+      expect(matchHasNoPairMemberOrTeam(match, "m1", "m2")).toBe(true);
+    }
+    for (const slotStart of uniqueSlotStarts(result.matches)) {
+      const slotMatches = result.matches.filter((match) => match.slotStart === slotStart);
+      const targetMatch = slotMatches.find(
+        (match) =>
+          (match.matchType === "men_doubles" || match.matchType === "men_doubles_substitute") &&
+          filledPlayerIds(match).some((playerId) => playerId === "m1" || playerId === "m2"),
+      );
+      if (!targetMatch) continue;
+      expect(teamHasPair(targetMatch.team1, "m1", "m2") || teamHasPair(targetMatch.team2, "m1", "m2")).toBe(true);
+    }
   });
 
   it("marks a hard same-gender pair unmet when both members are opponents in the same same-gender match", () => {
@@ -484,6 +511,19 @@ function matchHasNoPairMemberOrTeam(match: ScheduledMatch, player1Id: string, pl
   );
   const totalCount = teamCounts[0] + teamCounts[1];
   return totalCount < 2 || teamCounts.includes(2);
+}
+
+function filledPlayerIds(match: ScheduledMatch): string[] {
+  return [...match.team1, ...match.team2].flatMap((player) => (player ? [player.playerId] : []));
+}
+
+function teamHasPair(team: ScheduledMatch["team1"], player1Id: string, player2Id: string): boolean {
+  const playerIds = new Set(team.flatMap((player) => (player ? [player.playerId] : [])));
+  return playerIds.has(player1Id) && playerIds.has(player2Id);
+}
+
+function uniqueSlotStarts(matches: ScheduledMatch[]): number[] {
+  return Array.from(new Set(matches.map((match) => match.slotStart))).sort((a, b) => a - b);
 }
 
 function scheduleSignature(matches: ScheduledMatch[]): string[] {
