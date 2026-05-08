@@ -2,6 +2,8 @@ import { displayMatchTypeLabel, filledPlayers } from "./domain/scheduler";
 import { formatMinutes } from "./domain/time";
 import type { Player, RequiredPair, ScheduleResult, ScheduledMatch } from "./domain/types";
 
+const analysisFooterHeight = 112;
+
 export interface ShareRow {
   time: string;
   waiting: string[];
@@ -194,7 +196,7 @@ function calculateAnalysisHeight(playerStatCards: PlayerStatCard[], validationCa
   const statRows = Math.ceil(playerStatCards.length / 4);
   const validationLines = Math.max(...validationCards.map((card) => wrapText(card.value, 24).length));
   const validationCardHeight = Math.max(96, 56 + validationLines * 23);
-  return 34 + statRows * 92 + 30 + validationCardHeight + 44;
+  return 34 + statRows * 92 + 30 + validationCardHeight + analysisFooterHeight;
 }
 
 function renderAnalysisSections(y: number, playerStatCards: PlayerStatCard[], validationCards: ValidationCard[]): string {
