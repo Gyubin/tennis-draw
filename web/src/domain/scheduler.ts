@@ -34,7 +34,7 @@ interface HardPair {
   matchTypes: Set<MatchType>;
 }
 
-type SelectionKey = [number, number[], [number, number, number], [number, number, number], number];
+type SelectionKey = [number, [number, number, number], number[], [number, number, number], [number, number, number], number];
 
 interface MutableStats {
   matches: Map<string, number>;
@@ -273,6 +273,7 @@ function chooseBestMatchesForSlot(args: {
   targetFloor: number;
   targetMax: number;
   womenDoublesLimit: number | null;
+  hardPairs: HardPair[];
   shuffleSeed?: number;
 }): MatchCandidate[] {
   let candidates = generateMatchCandidates(
@@ -288,6 +289,10 @@ function chooseBestMatchesForSlot(args: {
   );
   if (args.shuffleSeed !== undefined) {
     candidates = shuffleBySeed(candidates, args.shuffleSeed);
+  }
+  const hardPairCompliantCandidates = candidates.filter((candidate) => isCandidateHardPairCompliant(candidate, args.hardPairs));
+  if (maxSelectionSize(hardPairCompliantCandidates, args.courts) === maxSelectionSize(candidates, args.courts)) {
+    candidates = hardPairCompliantCandidates;
   }
   if (candidates.length === 0) return [];
 
@@ -315,6 +320,8 @@ function chooseBestSelectionForSlot(
     availablePlayers: Player[];
     courts: number;
     stats: MutableStats;
+    targetFloor: number;
+    targetMax: number;
     requiredPairKeys: Set<string>;
     unpairedPlayerIds: Set<string>;
     earliestStartPlayerIds: Set<string>;
@@ -329,6 +336,7 @@ function chooseBestSelectionForSlot(
   const backtrack = (startIndex: number, chosen: MatchCandidate[], usedPlayerIds: Set<string>) => {
     const key: SelectionKey = [
       chosen.length,
+      buildTargetRangeSignature(chosen, args.stats, args.targetFloor, args.targetMax),
       buildBalanceSignature(chosen, args.stats),
       buildRestSignature(chosen, args.stats, args.availablePlayers),
       buildLowPriorityPreferenceSignature(
@@ -361,7 +369,17 @@ function chooseBestSelectionForSlot(
   };
 
   backtrack(0, [], new Set());
-  return { matches: bestSelection, key: bestKey ?? [0, buildBalanceSignature([], args.stats), buildRestSignature([], args.stats, args.availablePlayers), [0, 0, 0], 0] };
+  return {
+    matches: bestSelection,
+    key: bestKey ?? [
+      0,
+      buildTargetRangeSignature([], args.stats, args.targetFloor, args.targetMax),
+      buildBalanceSignature([], args.stats),
+      buildRestSignature([], args.stats, args.availablePlayers),
+      [0, 0, 0],
+      0,
+    ],
+  };
 }
 
 function preservesLowestMatchPlayers(
@@ -376,6 +394,18 @@ function preservesLowestMatchPlayers(
   return availablePlayers
     .filter((player) => getCount(stats.matches, player.playerId) === lowestMatchCount)
     .every((player) => !regularPlayedIds.has(player.playerId) || candidatePlayedIds.has(player.playerId));
+}
+
+function buildTargetRangeSignature(selectedMatches: MatchCandidate[], stats: MutableStats, targetFloor: number, targetMax: number): [number, number, number] {
+  const projectedCounts = new Map(stats.matches);
+  for (const candidate of selectedMatches) {
+    for (const playerId of candidate.playerIds) increment(projectedCounts, playerId);
+  }
+  const values = Array.from(projectedCounts.values());
+  const belowFloor = values.reduce((sum, value) => sum + Math.max(0, targetFloor - value), 0);
+  const aboveMax = values.reduce((sum, value) => sum + Math.max(0, value - targetMax), 0);
+  const range = Math.max(0, ...values) - Math.min(...values);
+  return [-belowFloor, -aboveMax, -range];
 }
 
 function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
@@ -578,6 +608,7 @@ export function scheduleMatches(
       targetFloor,
       targetMax,
       womenDoublesLimit,
+      hardPairs,
       shuffleSeed: options.shuffleSeed === undefined ? undefined : options.shuffleSeed + slotIndex * 101,
     });
     if (slotIndex === 0) {
@@ -940,20 +971,24 @@ function combinations<T>(items: T[], size: number): T[][] {
 
 function compareSelectionKey(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  const balance = compareNumberArrays(a[1], b[1]);
+  const targetRange = compareNumberArrays(a[1], b[1]);
+  if (targetRange !== 0) return targetRange;
+  const balance = compareNumberArrays(a[2], b[2]);
   if (balance !== 0) return balance;
-  const rest = compareNumberArrays(a[2], b[2]);
+  const rest = compareNumberArrays(a[3], b[3]);
   if (rest !== 0) return rest;
-  const low = compareNumberArrays(a[3], b[3]);
+  const low = compareNumberArrays(a[4], b[4]);
   if (low !== 0) return low;
-  return a[4] - b[4];
+  return a[5] - b[5];
 }
 
 function compareSelectionBalanceAndRest(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  const balance = compareNumberArrays(a[1], b[1]);
+  const targetRange = compareNumberArrays(a[1], b[1]);
+  if (targetRange !== 0) return targetRange;
+  const balance = compareNumberArrays(a[2], b[2]);
   if (balance !== 0) return balance;
-  return compareNumberArrays(a[2], b[2]);
+  return compareNumberArrays(a[3], b[3]);
 }
 
 function compareNumberArrays(a: readonly number[], b: readonly number[]): number {

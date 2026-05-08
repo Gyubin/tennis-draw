@@ -193,6 +193,36 @@ describe("scheduleMatches", () => {
     expect(Math.max(...totals) - Math.min(...totals)).toBeLessThanOrEqual(1);
   });
 
+  it("keeps hard-pair schedules within the target match range when substitute women are available", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "유상준", "M", "18:00", "21:00"),
+        player("m2", "신송헌", "M", "18:00", "21:00"),
+        player("m3", "박수규", "M", "18:00", "21:00"),
+        player("m4", "이재훈", "M", "18:00", "21:00"),
+        player("m5", "손규빈", "M", "18:00", "21:00"),
+        player("m6", "남우상", "M", "18:00", "21:00"),
+        player("m7", "조민호", "M", "18:00", "21:00"),
+        player("f1", "박선미", "F", "18:00", "21:00", true),
+        player("f2", "서지하", "F", "18:00", "21:00", true),
+        player("f3", "윤혜원", "F", "18:00", "21:00", true),
+      ],
+      [
+        { player1Id: "m7", player2Id: "f1", mode: "soft" },
+        { player1Id: "m3", player2Id: "f2", mode: "soft" },
+        { player1Id: "m5", player2Id: "f3", mode: "soft" },
+        { player1Id: "m3", player2Id: "m2", mode: "hard" },
+      ],
+      30,
+      2,
+    );
+    const totals = result.playerSummaries.map((summary) => summary.totalMatches);
+
+    expect(result.unmetRequiredPairs).toEqual([]);
+    expect(Math.min(...totals)).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...totals)).toBeLessThanOrEqual(5);
+  });
+
   it("keeps regular matches when substitute matches do not improve balance", () => {
     const result = scheduleMatches(
       [
