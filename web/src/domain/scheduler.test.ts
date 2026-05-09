@@ -233,6 +233,51 @@ describe("scheduleMatches", () => {
     expect(result.matches[0].matchType).toBe("men_doubles_substitute");
   });
 
+  it("prefers pure men opponents for a hard men pair when substitute women are available", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "M1", "M", "18:00", "18:30"),
+        player("m2", "M2", "M", "18:00", "18:30"),
+        player("m3", "M3", "M", "18:00", "18:30"),
+        player("m4", "M4", "M", "18:00", "18:30"),
+        player("m5", "M5", "M", "18:00", "18:30"),
+        player("m6", "M6", "M", "18:00", "18:30"),
+        player("m7", "M7", "M", "18:00", "18:30"),
+        player("f1", "F1", "F", "18:00", "18:30", true),
+      ],
+      [{ player1Id: "m1", player2Id: "m2", mode: "hard" }],
+      30,
+      2,
+    );
+
+    const hardPairMatch = result.matches.find((item) => teamHasPair(item.team1, "m1", "m2") || teamHasPair(item.team2, "m1", "m2"));
+
+    expect(result.matches).toHaveLength(2);
+    expect(result.matches.some((item) => item.matchType === "men_doubles_substitute")).toBe(true);
+    expect(hardPairMatch?.matchType).toBe("men_doubles");
+    expect(hardPairMatch && filledPlayerIds(hardPairMatch).every((playerId) => playerId.startsWith("m"))).toBe(true);
+    expect(result.unmetRequiredPairs).toEqual([]);
+  });
+
+  it("allows a substitute opponent for a hard men pair when no pure men opponent is possible", () => {
+    const result = scheduleMatches(
+      [
+        player("m1", "M1", "M", "18:00", "18:30"),
+        player("m2", "M2", "M", "18:00", "18:30"),
+        player("m3", "M3", "M", "18:00", "18:30"),
+        player("f1", "F1", "F", "18:00", "18:30", true),
+      ],
+      [{ player1Id: "m1", player2Id: "m2", mode: "hard" }],
+      30,
+      1,
+    );
+
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].matchType).toBe("men_doubles_substitute");
+    expect(teamHasPair(result.matches[0].team1, "m1", "m2") || teamHasPair(result.matches[0].team2, "m1", "m2")).toBe(true);
+    expect(result.unmetRequiredPairs).toEqual([]);
+  });
+
   it("uses substitute matches when they improve match-count balance", () => {
     const result = scheduleMatches(
       [

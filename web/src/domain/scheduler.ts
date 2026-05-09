@@ -38,6 +38,7 @@ type SelectionKey = [
   number,
   [number, number, number],
   [number, number, number],
+  [number, number, number],
   number[],
   [number, number, number],
   [number, number, number],
@@ -347,6 +348,7 @@ function chooseBestSelectionForSlot(
     const key: SelectionKey = [
       chosen.length,
       buildHardPairSignature(chosen, args.availablePlayers, args.hardPairs),
+      buildHardPairOpponentSignature(chosen, args.availablePlayers, args.hardPairs),
       buildTargetRangeSignature(chosen, args.stats, args.targetFloor, args.targetMax),
       buildBalanceSignature(chosen, args.stats),
       buildRestSignature(chosen, args.stats, args.availablePlayers),
@@ -386,6 +388,7 @@ function chooseBestSelectionForSlot(
     key: bestKey ?? [
       0,
       buildHardPairSignature([], args.availablePlayers, args.hardPairs),
+      buildHardPairOpponentSignature([], args.availablePlayers, args.hardPairs),
       buildTargetRangeSignature([], args.stats, args.targetFloor, args.targetMax),
       buildBalanceSignature([], args.stats),
       buildRestSignature([], args.stats, args.availablePlayers),
@@ -445,6 +448,23 @@ function buildHardPairSignature(selectedMatches: MatchCandidate[], availablePlay
   return [-targetTypeViolations, 0, 0];
 }
 
+function buildHardPairOpponentSignature(selectedMatches: MatchCandidate[], availablePlayers: Player[], hardPairs: HardPair[]): [number, number, number] {
+  if (hardPairs.length === 0) return [0, 0, 0];
+
+  const availablePlayerIds = new Set(availablePlayers.map((player) => player.playerId));
+  let substituteOpponentMatches = 0;
+
+  for (const pair of hardPairs) {
+    if (!isMaleHardPair(pair) || !availablePlayerIds.has(pair.player1Id) || !availablePlayerIds.has(pair.player2Id)) continue;
+
+    for (const candidate of selectedMatches) {
+      if (hardPairFacesSubstituteOpponent(candidate, pair)) substituteOpponentMatches += 1;
+    }
+  }
+
+  return [-substituteOpponentMatches, 0, 0];
+}
+
 function buildHardPairCohesionSignature(selectedMatches: MatchCandidate[], availablePlayers: Player[], hardPairs: HardPair[]): [number, number, number] {
   if (hardPairs.length === 0) return [0, 0, 0];
 
@@ -471,7 +491,7 @@ function buildHardPairCohesionSignature(selectedMatches: MatchCandidate[], avail
 }
 
 function isHardPairTargetCandidate(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
-  return !isCandidateHardPairCompliant(candidate, hardPairs);
+  return !isCandidateHardPairCompliant(candidate, hardPairs) || hasHardPairSubstituteOpponent(candidate, hardPairs);
 }
 
 function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
@@ -486,6 +506,25 @@ function isCandidateHardPairCompliant(candidate: MatchCandidate, hardPairs: Hard
 
 function countPlayersInTeam(team: [Player, Player], pair: HardPair): number {
   return team.filter((player) => player.playerId === pair.player1Id || player.playerId === pair.player2Id).length;
+}
+
+function hasHardPairSubstituteOpponent(candidate: MatchCandidate, hardPairs: HardPair[]): boolean {
+  return hardPairs.some((pair) => hardPairFacesSubstituteOpponent(candidate, pair));
+}
+
+function hardPairFacesSubstituteOpponent(candidate: MatchCandidate, pair: HardPair): boolean {
+  if (!isMaleHardPair(pair) || candidate.matchType !== "men_doubles_substitute") return false;
+
+  const team1Count = countPlayersInTeam(candidate.teams[0], pair);
+  const team2Count = countPlayersInTeam(candidate.teams[1], pair);
+  if (team1Count !== 2 && team2Count !== 2) return false;
+
+  const opponentTeam = team1Count === 2 ? candidate.teams[1] : candidate.teams[0];
+  return opponentTeam.some((player) => player.gender === "F" && player.canFillMaleSlot);
+}
+
+function isMaleHardPair(pair: HardPair): boolean {
+  return pair.matchTypes.has("men_doubles") && pair.matchTypes.has("men_doubles_substitute");
 }
 
 function maxSelectionSize(candidates: MatchCandidate[], courts: number): number {
@@ -523,9 +562,7 @@ function applyHardPairsToSchedule(matches: ScheduledMatch[], players: Player[], 
 function chooseHardPairSlotReplacements(slotMatches: ScheduledMatch[], availablePlayers: Player[], hardPairs: HardPair[]): ScheduledMatch[] {
   const baselineCandidates = slotMatches.map(matchToCandidate);
   const targetIndexes = baselineCandidates.flatMap((candidate, index) => (isHardPairTargetCandidate(candidate, hardPairs) ? [index] : []));
-  if (targetIndexes.length === 0 || targetIndexes.every((index) => isCandidateHardPairCompliant(baselineCandidates[index], hardPairs))) {
-    return slotMatches;
-  }
+  if (targetIndexes.length === 0) return slotMatches;
 
   const fixedPlayerIds = new Set(
     baselineCandidates.flatMap((candidate, index) => (targetIndexes.includes(index) ? [] : Array.from(candidate.playerIds))),
@@ -533,14 +570,16 @@ function chooseHardPairSlotReplacements(slotMatches: ScheduledMatch[], available
   const allCandidates = generateUnscoredMatchCandidates(availablePlayers);
   const replacementGroups = targetIndexes.map((matchIndex) => {
     const target = baselineCandidates[matchIndex];
-    return allCandidates
-      .filter(
-        (candidate) =>
-          candidate.matchType === target.matchType &&
-          isCandidateHardPairCompliant(candidate, hardPairs) &&
-          !setsIntersect(candidate.playerIds, fixedPlayerIds),
-      )
-      .sort((a, b) => scoreReplacementCandidate(b, target) - scoreReplacementCandidate(a, target));
+    const compliantCandidates = allCandidates.filter(
+      (candidate) =>
+        (candidate.matchType === target.matchType || (target.matchType === "men_doubles_substitute" && candidate.matchType === "men_doubles")) &&
+        isCandidateHardPairCompliant(candidate, hardPairs) &&
+        !setsIntersect(candidate.playerIds, fixedPlayerIds),
+    );
+    const preferredCandidates = compliantCandidates.filter((candidate) => !hasHardPairSubstituteOpponent(candidate, hardPairs));
+    return (preferredCandidates.length > 0 ? preferredCandidates : compliantCandidates).sort(
+      (a, b) => scoreReplacementCandidate(b, target) - scoreReplacementCandidate(a, target),
+    );
   });
   if (replacementGroups.some((group) => group.length === 0)) return slotMatches;
 
@@ -1033,26 +1072,28 @@ function compareSelectionKey(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
   const hardPairs = compareNumberArrays(a[1], b[1]);
   if (hardPairs !== 0) return hardPairs;
-  const targetRange = compareNumberArrays(a[2], b[2]);
+  const hardPairOpponents = compareNumberArrays(a[2], b[2]);
+  if (hardPairOpponents !== 0) return hardPairOpponents;
+  const targetRange = compareNumberArrays(a[3], b[3]);
   if (targetRange !== 0) return targetRange;
-  const balance = compareNumberArrays(a[3], b[3]);
+  const balance = compareNumberArrays(a[4], b[4]);
   if (balance !== 0) return balance;
-  const rest = compareNumberArrays(a[4], b[4]);
+  const rest = compareNumberArrays(a[5], b[5]);
   if (rest !== 0) return rest;
-  const hardPairCohesion = compareNumberArrays(a[5], b[5]);
+  const hardPairCohesion = compareNumberArrays(a[6], b[6]);
   if (hardPairCohesion !== 0) return hardPairCohesion;
-  const low = compareNumberArrays(a[6], b[6]);
+  const low = compareNumberArrays(a[7], b[7]);
   if (low !== 0) return low;
-  return a[7] - b[7];
+  return a[8] - b[8];
 }
 
 function compareSelectionBalanceAndRest(a: SelectionKey, b: SelectionKey): number {
   if (a[0] !== b[0]) return a[0] - b[0];
-  const targetRange = compareNumberArrays(a[2], b[2]);
+  const targetRange = compareNumberArrays(a[3], b[3]);
   if (targetRange !== 0) return targetRange;
-  const balance = compareNumberArrays(a[3], b[3]);
+  const balance = compareNumberArrays(a[4], b[4]);
   if (balance !== 0) return balance;
-  return compareNumberArrays(a[4], b[4]);
+  return compareNumberArrays(a[5], b[5]);
 }
 
 function compareNumberArrays(a: readonly number[], b: readonly number[]): number {
